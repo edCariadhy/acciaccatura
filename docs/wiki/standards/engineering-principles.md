@@ -37,6 +37,31 @@ rule: **when you change a thing, the doc for that thing changes in the same PR.*
 - Where possible, generate reference docs from the source of truth so they
   **cannot** drift (target: the MCP tool reference generated from `server.ts`).
 
+## Write so a B2 reader can follow it
+
+Pull request titles and bodies, commit messages, wiki pages, code comments, and
+every string a user sees are written at **CEFR B2** level. This is a rule, not a
+style note: the audience includes people who read English as a second language,
+and an agent that has to guess at a word is a reader too.
+
+- Use the plain word. "Written by", not "provenance". "Hard case", not
+  "adversarial case". "Overwrite", not "clobber". "A hint, not a rule", not
+  "advisory". "Fail in the open", not "degrade loudly".
+- **Names say what the thing is for.** `missingCodeWarning` beats
+  `lostAnnotationDecorationType`; the reader should not have to know a concept
+  first.
+- Words the product defines — annotation, anchor, drift, snapshot — stay. They
+  are the shared vocabulary, and swapping them for near-synonyms costs more than
+  it saves. Define each one once, then use it.
+- Short sentences. One idea each. Say the result before the reason.
+
+Two names are already written to disk and read by agents over MCP:
+`provenance`, and the trust values `authoritative` / `suggested` /
+`unverified`. Those do **not** get renamed in place — see
+[stable-contracts.md](stable-contracts.md). We add the plainer name, write both
+for a while, and mark the old one as out of date, in the same pass that changes
+the file layout.
+
 ## Prefer the boring decision
 
 Price every added dependency, abstraction, process, or storage layer. Reach for

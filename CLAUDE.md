@@ -49,6 +49,11 @@ Standards & docs live in-repo under [docs/wiki/](docs/wiki/index.md) (there is n
 wiki — it would bypass review). Change the doc for a thing in the same PR as the thing;
 `docs:check` runs in CI.
 
+Write PR text, commits, docs, comments and user-facing strings at **B2 English**, and name
+things so the name says what they are for. The rule, the word swaps, and the two stored
+names that may not be renamed in place are in
+[docs/wiki/standards/engineering-principles.md](docs/wiki/standards/engineering-principles.md).
+
 `npm test` needs no prior build: the in-repo vitest configs alias `@acciaccatura/core`
 to its TypeScript source, so the suites run from a clean checkout. Scoped / single test:
 

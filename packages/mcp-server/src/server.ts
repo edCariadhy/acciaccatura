@@ -7,11 +7,11 @@ import type { Annotation, AnnotationStore } from "@acciaccatura/core";
 /**
  * Build the Acciaccatura MCP server over a loaded store.
  *
- * The tool set is deliberately small and the descriptions state WHEN to call
- * each tool, not merely what it does: the MCP surface is the product API that
- * agents navigate by, so a description that drifts from behavior is a defect no
- * prompt can repair. `workspaceRoot` lets the server read current code to
- * report anchor drift.
+ * We keep the set of tools small on purpose, and each description says WHEN to
+ * call the tool, not only what it does. These tools are how agents use the
+ * product, so a description that no longer matches the code is a bug that no
+ * prompt can fix. `workspaceRoot` lets the server read the code as it is now,
+ * to report whether it still matches each note.
  */
 export function createServer(store: AnnotationStore, workspaceRoot: string): McpServer {
   const server = new McpServer({ name: "acciaccatura", version: "0.0.0" });
@@ -21,7 +21,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Get code annotations",
       description:
-        "Call this BEFORE editing or reasoning about a region of code, to retrieve the notes anchored there (intent, constraints, gotchas, past decisions). Results are ranked and capped — treat them as advisory context, not authority. Each result reports a drift status; if it is 'drifted' or the note contradicts the code, trust the code. Pass `line` to focus on one location.",
+        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions). Results are ranked and limited. Treat them as hints, not rules. Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code. Pass `line` to ask about one place.",
       inputSchema: {
         file: z.string().describe("Workspace-relative POSIX path, e.g. src/store.ts"),
         line: z.number().int().positive().optional().describe("1-based line to focus on"),
@@ -48,7 +48,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Annotate code",
       description:
-        "Call this to persist a durable note about a specific code region that a future agent or developer would need but could NOT re-derive from the code alone: a non-obvious constraint, a decision and the alternative it rejected, a subtle gotcha. Do not annotate the obvious. Pass the exact current text of the lines as `snapshot` so later drift can be detected.",
+        "Call this to save a note about a piece of code that the next agent or developer would need but could NOT work out from the code alone: a rule that is not visible, a decision and what it ruled out, a trap that is easy to fall into. Do not write notes about what the code already shows. Pass the exact text of those lines as `snapshot`, so we can later tell whether the code changed.",
       inputSchema: {
         file: z.string().describe("Workspace-relative POSIX path"),
         startLine: z.number().int().positive(),
@@ -78,7 +78,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Remove annotation",
       description:
-        "Call this only when an annotation is confirmed obsolete — the code it described is gone, or its guidance is now wrong. Removing a stale note is better than leaving one that could mislead a future agent. Get the id from get_annotations.",
+        "Call this only when you are sure a note is out of date — the code it described is gone, or its advice is now wrong. Deleting an old note is better than leaving one that sends the next agent the wrong way. Get the id from get_annotations.",
       inputSchema: {
         id: z.string().describe("Annotation id from get_annotations"),
       },

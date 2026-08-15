@@ -73,7 +73,7 @@ export function activate(context: vscode.ExtensionContext): void {
         Promise.resolve(
           vscode.window.showInputBox({
             title: "Acciaccatura",
-            prompt: "Note to anchor here — state what is non-obvious, and why.",
+            prompt: "What should the next reader know about this code that the code itself does not show? Say why.",
             ignoreFocusOut: true,
           }),
         ),
