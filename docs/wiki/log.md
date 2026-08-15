@@ -4,6 +4,18 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — Stored names stay: no rename for `provenance` or the trust values
+
+Decided: `provenance`, and `authoritative` / `suggested` / `unverified`, keep
+their names for good. The earlier plan was to add plainer names beside them
+during the file-layout change; that is dropped. They are written to disk and read
+by agents, they say what they mean, and a second name would cost every reader and
+every stored file for no gain. They count as product vocabulary from here on, like
+anchor and drift.
+
+The B2 rule is unchanged for prose: when a page or a message explains one of these
+to a person, write "who wrote it" instead of making them parse a field name.
+
 ## 2026-08-16 — A note's position is worked out on every read, never written back
 
 The saved anchor is now the capture and nothing else: what the writer pointed at,
