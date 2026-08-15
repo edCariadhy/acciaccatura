@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { driftStatus, fingerprint, readRegion, reanchor } from "../src/anchor.js";
+import { driftStatus, findNoteLines, fingerprint, readRegion, reanchor } from "../src/anchor.js";
 import type { Anchor } from "../src/types.js";
 
 function anchorFor(snapshot: string, file = "src/target.ts"): Anchor {
@@ -173,5 +173,65 @@ describe("reanchor", () => {
     expect(result).toBeDefined();
     expect(result?.startLine).toBe(1);
     expect(result?.endLine).toBe(10);
+  });
+});
+
+describe("findNoteLines — where a note's code sits right now", () => {
+  const code = [
+    "export function pay(order) {",
+    "  const fee = order.total * 0.02;",
+    "  return order.total + fee;",
+    "}",
+  ].join("\n");
+  const savedAnchor = (): Anchor => ({
+    file: "src/pay.ts",
+    startLine: 1,
+    endLine: 4,
+    snapshot: code,
+    snapshotHash: fingerprint(code),
+  });
+
+  it("says the code is still on the saved lines when nothing changed", () => {
+    expect(findNoteLines(savedAnchor(), `${code}\n`)).toEqual({
+      state: "same",
+      startLine: 1,
+      endLine: 4,
+    });
+  });
+
+  it("reports the new lines when the code moved, and leaves the saved anchor alone", () => {
+    // Frozen on purpose: any write would throw here, so this also proves what
+    // we keep on disk is the capture, not a running position.
+    const anchor = Object.freeze(savedAnchor());
+    const moved = `import { rates } from "./rates.js";\n\n${code}\n`;
+
+    expect(findNoteLines(anchor, moved)).toEqual({ state: "moved", startLine: 3, endLine: 6 });
+    expect(anchor.startLine).toBe(1);
+  });
+
+  it("says gone when the code is not in the file any more", () => {
+    const rewritten = "export function pay(order) {\n  return charge(order);\n}\n";
+    expect(findNoteLines(savedAnchor(), rewritten)).toEqual({ state: "gone" });
+  });
+
+  it("says gone when the file cannot be read", () => {
+    expect(findNoteLines(savedAnchor(), undefined)).toEqual({ state: "gone" });
+  });
+
+  it("says gone rather than choose between the real code and a near-copy", () => {
+    const nearCopy = [
+      "export function payLegacy(order) {",
+      "  const fee = order.total * 0.02;",
+      "  return order.total + fee;",
+      "}",
+      "",
+      "export function pay(order) {",
+      "  const fee = order.total * 0.02;",
+      "  if (order.exempt) return order.total;",
+      "  return order.total + fee;",
+      "}",
+      "",
+    ].join("\n");
+    expect(findNoteLines(savedAnchor(), nearCopy)).toEqual({ state: "gone" });
   });
 });

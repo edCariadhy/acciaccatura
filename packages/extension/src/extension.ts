@@ -29,16 +29,18 @@ export function activate(context: vscode.ExtensionContext): void {
       
       vscode.window.registerTreeDataProvider("acciaccatura.annotations", treeProvider);
       
-      // Initial decorations
-      decorationManager.updateDecorations(vscode.window.activeTextEditor).then(changed => {
-        if (changed) treeProvider?.refresh();
-      });
+      // Initial decorations. Drawing never writes to the store, so there is
+      // nothing for the sidebar to pick up afterwards.
+      void decorationManager.updateDecorations(vscode.window.activeTextEditor);
 
       // Update on editor change
       context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(async editor => {
-          const changed = await decorationManager?.updateDecorations(editor);
-          if (changed) treeProvider?.refresh();
+          // Another writer — an agent over MCP — may have added notes since the
+          // last look. Switching files is rare enough to afford a re-read.
+          await store.reload();
+          await decorationManager?.updateDecorations(editor);
+          treeProvider?.refresh();
         })
       );
 
@@ -46,8 +48,7 @@ export function activate(context: vscode.ExtensionContext): void {
       context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(async e => {
           if (vscode.window.activeTextEditor && e.document === vscode.window.activeTextEditor.document) {
-            const changed = await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
-            if (changed) treeProvider?.refresh();
+            await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
           }
         })
       );

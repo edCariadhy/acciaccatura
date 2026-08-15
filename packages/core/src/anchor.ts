@@ -46,6 +46,44 @@ export async function readRegion(root: string, anchor: Anchor): Promise<string |
 }
 
 /**
+ * Where a note's code sits in the file right now.
+ * "same" — still on the saved lines. "moved" — found elsewhere, at these lines.
+ * "gone" — we could not find it, so nothing may be shown at a guessed spot.
+ */
+export type NoteLines =
+  | { state: "same" | "moved"; startLine: number; endLine: number }
+  | { state: "gone" };
+
+/**
+ * Work out where a note's code is now, without changing the note.
+ *
+ * The saved anchor is the capture: what the writer pointed at, and when. It is
+ * never rewritten, because a note whose saved lines keep being overwritten
+ * loses the one record of what it was written about — and on another branch it
+ * would wander onto whatever code sits closest. So position is worked out on
+ * every read instead, from the file text the caller already has.
+ *
+ * `fileText` is undefined when the file cannot be read; that is "gone", never a
+ * guess.
+ */
+export function findNoteLines(anchor: Anchor, fileText: string | undefined): NoteLines {
+  if (fileText === undefined) return { state: "gone" };
+
+  const lines = fileText.split(/\r?\n/);
+  const stillThere =
+    anchor.startLine >= 1 &&
+    anchor.endLine <= lines.length &&
+    driftStatus(anchor, lines.slice(anchor.startLine - 1, anchor.endLine).join("\n")) === "aligned";
+  if (stillThere) {
+    return { state: "same", startLine: anchor.startLine, endLine: anchor.endLine };
+  }
+
+  const moved = reanchor(anchor, fileText);
+  if (!moved) return { state: "gone" };
+  return { state: "moved", startLine: moved.startLine, endLine: moved.endLine };
+}
+
+/**
  * Attempt to find a drifted anchor in the current file text.
  * Uses a line-based sliding window, ignoring whitespace, to find the highest matching block.
  * The best match must clear two bars: a similarity threshold (80%, or 100% for
