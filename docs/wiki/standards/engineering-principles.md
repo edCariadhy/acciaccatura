@@ -47,13 +47,16 @@ and an agent that has to guess at a word is a reader too.
 - Use the plain word. "Written by", not "provenance". "Hard case", not
   "adversarial case". "Overwrite", not "clobber". "A hint, not a rule", not
   "advisory". "Fail in the open", not "degrade loudly".
-- **Names say what the thing is for.** `missingCodeWarning` beats
-  `lostAnnotationDecorationType`; the reader should not have to know a concept
-  first.
 - Words the product defines — annotation, anchor, drift, snapshot — stay. They
   are the shared vocabulary, and swapping them for near-synonyms costs more than
   it saves. Define each one once, then use it.
 - Short sentences. One idea each. Say the result before the reason.
+
+**Code names follow a different rule: short, and they state intent.** That is the
+whole test for an identifier. Reading level does not apply here, so never rewrite
+a name to hit a vocabulary level, and do not churn names that already read well —
+a rename costs every reader who knew the old one. Rename only when the name is
+genuinely unclear about what the thing is for.
 
 Two names are already written to disk and read by agents over MCP:
 `provenance`, and the trust values `authoritative` / `suggested` /
