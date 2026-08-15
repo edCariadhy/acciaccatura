@@ -41,7 +41,13 @@ npm install                 # install all workspaces
 npm run build               # build core → mcp-server (tsc) + extension (esbuild)
 npm test                    # vitest: core unit + mcp-server integration + extension unit
 npm run typecheck           # tsc --noEmit across workspaces
+npm run lint                # eslint (flat config) over all packages
+npm run docs:check          # docs/wiki conformance floor (frontmatter, portable links)
 ```
+
+Standards & docs live in-repo under [docs/wiki/](docs/wiki/index.md) (there is no GitHub
+wiki — it would bypass review). Change the doc for a thing in the same PR as the thing;
+`docs:check` runs in CI.
 
 `npm test` needs no prior build: the in-repo vitest configs alias `@acciaccatura/core`
 to its TypeScript source, so the suites run from a clean checkout. Scoped / single test:
@@ -76,8 +82,9 @@ Note: `npm audit` reports dev-only advisories in vitest's transitive `esbuild`/`
 (the esbuild dev-server issue) — not in shipped code. The fix is a breaking vitest v4 bump;
 left for a deliberate upgrade, not an incidental one.
 
-There is no linter configured yet (only `tsc` strict typecheck). Add one deliberately if
-wanted; don't invoke `eslint`/`prettier` scripts that don't exist.
+Lint with ESLint 9 flat config ([eslint.config.mjs](eslint.config.mjs), typescript-eslint):
+`npm run lint` (or `lint:fix`). It's part of the CI `unit` job. There is no Prettier;
+don't invoke a `prettier` script that doesn't exist.
 
 ## How this repo fits a two-stage workflow
 
@@ -111,6 +118,12 @@ implementer must respect. Flag it explicitly when a change violates one.
   machine without an explicit, visible user action.
 - **The extension host is shared.** Never block the UI thread; use lazy activation events;
   do no startup work that a large workspace turns into a stall.
+- **Stable Contracts.** Contracts with consumers we don't control — the MCP tool surface and
+  the on-disk annotation schema — evolve only by *adding and deprecating*, never by renaming,
+  removing, or re-typing what exists (old files and old agents keep working). Code with only
+  in-repo consumers (`@acciaccatura/core` internals) is free to refactor. Full policy, with the
+  Go-1-compatibility framing and pre-1.0 sequencing:
+  [docs/wiki/standards/stable-contracts.md](docs/wiki/standards/stable-contracts.md).
 
 ## Where the invariants live in code
 

@@ -10,6 +10,9 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "docs:check": "node scripts/docs-check.mjs docs",
     "clean": "npm run clean --workspaces --if-present"
   },
   "engines": {
@@ -17,6 +20,10 @@
   },
   "license": "SEE LICENSE IN packages/*",
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "globals": "^15.9.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.2.0"
   }
 }
