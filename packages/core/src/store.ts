@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
-import type { Annotation, NewAnnotation } from "./types.js";
+import type { Anchor, Annotation, NewAnnotation, TrustLevel } from "./types.js";
 
 /**
  * Default query bound. Context is the scarce resource: every annotation handed
@@ -24,6 +24,19 @@ export interface QueryOptions {
   line?: number;
   /** Max results; defaults to {@link DEFAULT_LIMIT}. */
   limit?: number;
+}
+
+/**
+ * What an existing annotation may change. `id`, `createdAt`, and `provenance`
+ * are deliberately absent: identity survives an edit, and who wrote a note is
+ * not editable after the fact.
+ */
+export interface AnnotationUpdate {
+  body?: string;
+  /** Replacement anchor; `snapshotHash` is re-derived, as on {@link AnnotationStore.add}. */
+  anchor?: Omit<Anchor, "snapshotHash">;
+  trust?: TrustLevel;
+  author?: string;
 }
 
 /**
@@ -59,12 +72,10 @@ export class AnnotationStore {
   async add(input: NewAnnotation): Promise<Annotation> {
     this.#ensureLoaded();
     const now = new Date().toISOString();
-    // Store the normalized snapshot so it matches its hash and the read side.
-    const snapshot = normalizeSnapshot(input.anchor.snapshot);
     const annotation: Annotation = {
       id: randomUUID(),
       body: input.body,
-      anchor: { ...input.anchor, snapshot, snapshotHash: fingerprint(snapshot) },
+      anchor: sealAnchor(input.anchor),
       provenance: input.provenance,
       // Human notes are authoritative by default; agent notes are suggestions
       // until a human confirms them.
@@ -76,6 +87,34 @@ export class AnnotationStore {
     this.#data.annotations.push(annotation);
     await this.#persist();
     return annotation;
+  }
+
+  /**
+   * Edit an annotation in place, keeping its id. Re-anchoring goes through
+   * here rather than remove + add: ids are handed out (MCP results, tree-view
+   * selections, anything an agent cached), so healing an anchor must not
+   * quietly reissue the annotation under a new identity.
+   *
+   * Returns the updated record, or `undefined` when no annotation has that id
+   * — the caller decides how to degrade; we never resurrect a deleted note.
+   */
+  async update(id: string, changes: AnnotationUpdate): Promise<Annotation | undefined> {
+    this.#ensureLoaded();
+    const index = this.#data.annotations.findIndex((a) => a.id === id);
+    if (index === -1) return undefined;
+
+    const existing = this.#data.annotations[index]!;
+    const updated: Annotation = {
+      ...existing,
+      body: changes.body ?? existing.body,
+      anchor: changes.anchor ? sealAnchor(changes.anchor) : existing.anchor,
+      trust: changes.trust ?? existing.trust,
+      author: changes.author ?? existing.author,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#data.annotations[index] = updated;
+    await this.#persist();
+    return updated;
   }
 
   get(id: string): Annotation | undefined {
@@ -123,6 +162,16 @@ export class AnnotationStore {
     await mkdir(dirname(this.#path), { recursive: true });
     await writeFile(this.#path, `${JSON.stringify(this.#data, null, 2)}\n`, "utf8");
   }
+}
+
+/**
+ * Store the normalized snapshot alongside its hash, so the stored text matches
+ * both its fingerprint and what the read side reconstructs. Every write path
+ * goes through here — an anchor persisted with a stale hash reads as drifted.
+ */
+function sealAnchor(anchor: Omit<Anchor, "snapshotHash">): Anchor {
+  const snapshot = normalizeSnapshot(anchor.snapshot);
+  return { ...anchor, snapshot, snapshotHash: fingerprint(snapshot) };
 }
 
 /** Higher is more relevant. Line overlap dominates; otherwise inverse distance. */
