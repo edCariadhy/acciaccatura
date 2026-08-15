@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *" # nightly, to catch drift against VS Code "stable"
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast gate: builds, typechecks, and runs the vitest unit + integration
+  # suites. Runs on every push and PR.
+  unit:
+    name: build + unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+
+  # Heavy gate: launches a real VS Code to smoke-test the extension. Runs on
+  # PRs and the nightly schedule only — never on plain pushes — and on Linux
+  # under xvfb (never macOS: those runner minutes bill 10x).
+  e2e:
+    name: extension e2e
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Cache the downloaded VS Code build (~300 MB) between runs.
+      - uses: actions/cache@v4
+        with:
+          path: packages/extension/.vscode-test
+          key: vscode-test-${{ runner.os }}
+      - name: Run e2e under a virtual display
+        run: xvfb-run -a npm run test:e2e --workspace acciaccatura

@@ -1,0 +1,31 @@
+{
+  "name": "@acciaccatura/core",
+  "version": "0.0.0",
+  "description": "Shared annotation model, store, and anchoring logic for Acciaccatura.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./store": "./dist/store.js",
+    "./types": "./dist/types.js",
+    "./anchor": "./dist/anchor.js",
+    "./selection": "./dist/selection.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "vitest": "^2.1.0"
+  }
+}

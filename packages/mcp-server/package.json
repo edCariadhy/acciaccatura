@@ -1,0 +1,38 @@
+{
+  "name": "@acciaccatura/mcp-server",
+  "version": "0.0.0",
+  "description": "MCP server exposing Acciaccatura code annotations to AI agents.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "bin": {
+    "acciaccatura-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./store": "./dist/store.js",
+    "./types": "./dist/types.js",
+    "./anchor": "./dist/anchor.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@acciaccatura/core": "*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "vitest": "^2.1.0"
+  }
+}
