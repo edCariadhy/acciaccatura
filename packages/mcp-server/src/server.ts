@@ -35,6 +35,9 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       },
     },
     async ({ file, line, limit }) => {
+      // The human keeps annotating in the editor while this server is
+      // connected, so the copy loaded at startup goes stale immediately.
+      await store.reload();
       const results = store.query({ file, line, limit });
       return { content: [{ type: "text", text: await render(results, workspaceRoot) }] };
     },

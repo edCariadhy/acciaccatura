@@ -32,6 +32,13 @@ async function connect(): Promise<Client> {
 const textOf = (r: { content: Array<{ type: string; text?: string }> }) =>
   r.content.map((p) => p.text ?? "").join("\n");
 
+/** A second writer on the same store file — stands in for the editor. */
+async function editorStore(): Promise<AnnotationStore> {
+  const s = new AnnotationStore(join(root, ".acciaccatura", "annotations.json"));
+  await s.load();
+  return s;
+}
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "acc-int-"));
   await mkdir(join(root, "src"), { recursive: true });
@@ -89,6 +96,40 @@ describe("MCP server integration", () => {
 
     const all = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", limit: 10 } });
     expect((textOf(all as never).match(/drift:/g) ?? []).length).toBe(5);
+  });
+
+  it("sees an annotation the editor wrote after the server connected", async () => {
+    // Two writers, one store: the server holds a copy from startup, but the
+    // human keeps annotating. An agent asking for context must not be told
+    // "none" because its process happened to start first.
+    const editor = await editorStore();
+    await editor.add({
+      body: "written in the editor, after this server was already running",
+      anchor: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: "export function add(a, b) {\n  return a + b;" },
+      provenance: "human",
+    });
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", line: 1 } });
+    expect(textOf(got as never)).toContain("written in the editor");
+  });
+
+  it("does not destroy an editor annotation when the agent writes", async () => {
+    const editor = await editorStore();
+    await editor.add({
+      body: "human note",
+      anchor: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "export function add(a, b) {" },
+      provenance: "human",
+    });
+
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 2, endLine: 2, snapshot: "  return a + b;", body: "agent note" },
+    });
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", limit: 10 } });
+    const text = textOf(got as never);
+    expect(text).toContain("human note");
+    expect(text).toContain("agent note");
   });
 
   it("rejects malformed input at the tool boundary (negative startLine)", async () => {
