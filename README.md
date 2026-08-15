@@ -27,18 +27,13 @@ reads the same intent, regardless of editor.
 
 ## Design principles
 
-These are hard constraints, not preferences:
+These are strict rules, not just suggestions:
 
-- **Advisory, never authority.** Agents must produce correct work when a note is stale, wrong,
-  or absent. The code always wins on conflict.
-- **Degrade loudly.** A note silently pointing at changed code is worse than no note. Drift is
-  detected and surfaced (`aligned` / `drifted` / `unknown`).
-- **Bounded context.** Queries return the few most relevant notes (ranked, capped), never a
-  full dump — every returned note costs an agent's context window on every later turn.
-- **Two writers, one store.** Humans (editor) and agents (MCP) write to the same store;
-  provenance and trust are on every record.
-- **Local by default.** Notes may carry proprietary reasoning; nothing leaves the machine
-  without an explicit user action.
+- **Helpful notes, not the final word.** AI agents must still write correct code even if a note is old, wrong, or missing. If the note and the code do not match, the code is always right.
+- **Warn when things change.** It is bad if a note points to code that has changed without warning you. The system checks if the code has moved and tells you its status (`aligned`, `drifted`, or `unknown`).
+- **Keep it brief.** The system only gives the AI the most important notes, not all of them. Sending too many notes uses up the AI's memory limits and slows it down.
+- **One shared file.** Both humans (in the editor) and AI agents (using MCP) save notes in the same place. Every note records who wrote it, so you always know where it came from.
+- **Private and local.** Notes might contain private company ideas. Nothing is sent to the internet unless you clearly choose to share it.
 
 ## Repository layout
 
