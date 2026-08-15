@@ -1,22 +1,22 @@
 import * as vscode from 'vscode';
 import { AnnotationStore, driftStatus, reanchor, readRegion } from '@acciaccatura/core';
 
-let annotationDecorationType: vscode.TextEditorDecorationType;
-let spanDecorationType: vscode.TextEditorDecorationType;
-let lostAnnotationDecorationType: vscode.TextEditorDecorationType;
+let noteStartIcon: vscode.TextEditorDecorationType;
+let noteSpanLine: vscode.TextEditorDecorationType;
+let missingCodeWarning: vscode.TextEditorDecorationType;
 
 export function initDecorations(context: vscode.ExtensionContext) {
-  // The icon marks WHERE the note is attached, so it goes on the first line
-  // only: VS Code repeats a gutter icon on every line of a range, and a 30-line
-  // annotation rendered as 30 identical bubbles reads as 30 separate notes.
-  annotationDecorationType = vscode.window.createTextEditorDecorationType({
+  // The icon shows WHERE a note starts, so it sits on the first line only.
+  // VS Code repeats a gutter icon on every line of a range, and a 30-line note
+  // drawn as 30 of the same bubble looks like 30 separate notes.
+  noteStartIcon = vscode.window.createTextEditorDecorationType({
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'annotation.svg'),
     gutterIconSize: 'contain',
   });
 
-  // The spine shows HOW FAR the note reaches — one continuous rule down the
-  // span. It carries the hover, so hovering anywhere in the range works.
-  spanDecorationType = vscode.window.createTextEditorDecorationType({
+  // The line down the side shows HOW FAR the note reaches. It holds the hover
+  // text, so pointing anywhere inside the range shows the note.
+  noteSpanLine = vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
     backgroundColor: 'rgba(92, 152, 255, 0.1)',
     borderColor: 'rgba(92, 152, 255, 0.7)',
@@ -24,7 +24,7 @@ export function initDecorations(context: vscode.ExtensionContext) {
     borderWidth: '0 0 0 2px',
   });
 
-  lostAnnotationDecorationType = vscode.window.createTextEditorDecorationType({
+  missingCodeWarning = vscode.window.createTextEditorDecorationType({
     gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', 'lost.svg'),
     gutterIconSize: 'contain',
     isWholeLine: true,
@@ -52,31 +52,32 @@ export class DecorationManager {
     
     const iconDecorations: vscode.DecorationOptions[] = [];
     const spanDecorations: vscode.DecorationOptions[] = [];
-    const lostDecorations: vscode.DecorationOptions[] = [];
+    const missingCodeDecorations: vscode.DecorationOptions[] = [];
 
     const fileText = editor.document.getText();
     let storeChanged = false;
 
     for (const annotation of fileAnnotations) {
-      // Re-read region to check for drift
+      // Read the lines again to see whether the code still matches the note.
       let currentAnchor = annotation.anchor;
       const currentText = await readRegion(workspaceRoot, currentAnchor);
       const status = driftStatus(currentAnchor, currentText);
 
       if (status === 'drifted' || status === 'unknown') {
-        const reanchored = reanchor(currentAnchor, fileText);
-        if (reanchored) {
-          // In place, so the annotation keeps its id: anything holding the old
-          // one (a cached MCP result, a tree selection) survives the heal.
-          const healed = await this.store.update(annotation.id, { anchor: reanchored });
-          currentAnchor = healed?.anchor ?? reanchored;
+        const movedAnchor = reanchor(currentAnchor, fileText);
+        if (movedAnchor) {
+          // Update in place so the note keeps its id. Anything holding the old
+          // id — a saved MCP result, a selection in the sidebar — still works.
+          const saved = await this.store.update(annotation.id, { anchor: movedAnchor });
+          currentAnchor = saved?.anchor ?? movedAnchor;
           storeChanged = true;
         } else {
-          // Permanently lost! Degrade loudly. Display at line 1.
+          // We could not find the code again. Say so in the open, at line 1,
+          // rather than leave the note pointing at whatever is there now.
           const range = new vscode.Range(0, 0, 0, 0);
-          lostDecorations.push({
+          missingCodeDecorations.push({
             range,
-            hoverMessage: `**Lost Annotation:** ${annotation.body}\n\n*This annotation could not be re-anchored. Please review it in the Acciaccatura Tree View.*`
+            hoverMessage: `**Note with no code:** ${annotation.body}\n\n*We can't find the code this note was written for. Open the Acciaccatura view in the sidebar to move it or delete it.*`
           });
           continue;
         }
@@ -89,8 +90,8 @@ export class DecorationManager {
       md.appendMarkdown(`**Acciaccatura (${annotation.trust})**\n\n`);
       md.appendMarkdown(annotation.body);
 
-      // Only the span carries the hover; the icon shares the first line with it
-      // and a second hoverMessage there would show the note twice.
+      // Only the side line holds the hover text. The icon sits on the same
+      // first line, so hover text on both would show the note twice.
       iconDecorations.push({ range: new vscode.Range(startPos, startPos) });
       spanDecorations.push({
         range: new vscode.Range(startPos, endPos),
@@ -98,9 +99,9 @@ export class DecorationManager {
       });
     }
 
-    editor.setDecorations(annotationDecorationType, iconDecorations);
-    editor.setDecorations(spanDecorationType, spanDecorations);
-    editor.setDecorations(lostAnnotationDecorationType, lostDecorations);
+    editor.setDecorations(noteStartIcon, iconDecorations);
+    editor.setDecorations(noteSpanLine, spanDecorations);
+    editor.setDecorations(missingCodeWarning, missingCodeDecorations);
     
     return storeChanged; // So we can refresh TreeView if needed
   }

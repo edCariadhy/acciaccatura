@@ -95,7 +95,8 @@ Why this layout serves both modes:
 
 What it costs, accepted knowingly:
 
-- **Renaming a source file orphans its shard** until something reconciles them.
+- **Renaming a source file leaves its notes file behind** until something matches
+  them up again.
   The anchor already carries the path, so reconciliation is possible; it is not
   free.
 - **Cross-file questions need an index.** "Which files have annotations?"
@@ -118,9 +119,9 @@ that ignores them re-introduces the defect at a smaller scale.
   note. Every write must re-read the shard, merge, and rename a temp file into
   place.
 - **Never persist a re-anchor.** The capture is immutable; where a note
-  currently sits is derived at read time. This removes the write amplification
-  above and stops a note wandering onto a near-identical decoy on another
-  branch. See the entries in [../log.md](../log.md).
+  currently sits is derived at read time. This removes the extra writes
+  described above, and stops a note moving onto a near-copy of the code on
+  another branch. See the entries in [../log.md](../log.md).
 - **Bound what one note can cost.** A snapshot is 47% of a record's bytes while
   the note itself is 9%. Cap the snapshot, cap the body, and keep the agent-facing
   query bounded independently of disk size — context and disk are different budgets.

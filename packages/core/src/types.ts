@@ -10,9 +10,9 @@
 export type Provenance = "human" | "agent";
 
 /**
- * How much authority the annotation carries. Annotations are advisory context,
- * never ground truth — trust only ranks how seriously a reader should weigh a
- * note against the code, which always wins on conflict.
+ * How much weight to give the note. A note is a hint, never the truth: trust
+ * only says how seriously to take it next to the code, and the code always
+ * wins when they disagree.
  */
 export type TrustLevel = "authoritative" | "suggested" | "unverified";
 
@@ -25,7 +25,7 @@ export type TrustLevel = "authoritative" | "suggested" | "unverified";
 export type DriftStatus = "aligned" | "drifted" | "unknown";
 
 /**
- * Where an annotation is attached. Line numbers are advisory and WILL drift as
+ * Where a note is attached. Line numbers are a best guess and WILL move as
  * code moves; `snapshot`/`snapshotHash` exist so that drift can be detected
  * rather than hidden. Robust re-anchoring is the core open problem — see the
  * anchoring notes in the design docs.

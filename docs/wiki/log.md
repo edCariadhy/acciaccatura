@@ -4,6 +4,37 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — Plain English, and names that say what they are for
+
+Writing level is now a rule, in
+[standards/engineering-principles.md](standards/engineering-principles.md): PR
+text, commits, wiki pages, comments and every string a user sees are written at
+**B2 English**, and a name should say what the thing is for. `CLAUDE.md` points
+at the rule so later sessions follow it.
+
+Changed in this pass:
+
+- **Strings users read.** The warning for a note whose code is gone was
+  "This annotation could not be re-anchored"; it now says "We can't find the
+  code this note was written for", and tells the reader where to fix it. The
+  prompt when writing a note asks a question instead of giving an instruction.
+- **The three MCP tool descriptions**, same meaning, simpler words. A test that
+  guards "the description says WHEN to call the tool" caught the change and was
+  updated with it.
+- **Names in the extension**: `lostAnnotationDecorationType` →
+  `missingCodeWarning`, `annotationDecorationType` → `noteStartIcon`,
+  `spanDecorationType` → `noteSpanLine`.
+- **Comments** in `core` and the new storage standard.
+
+Two names are **not** changed: `provenance`, and the trust values
+`authoritative` / `suggested` / `unverified`. Both are written to disk and read
+by agents over MCP, so [stable-contracts.md](standards/stable-contracts.md)
+allows only "add the new name, keep the old one, mark it out of date". That is
+planned for the same pass that changes the file layout, so files migrate once.
+
+Older entries in this log keep their original wording; they are a record of what
+was written at the time.
+
 ## 2026-08-16 — Two writers, one store, no data loss
 
 Fixes the data loss found below, both halves of it.

@@ -59,8 +59,9 @@ describe("MCP server integration", () => {
       "get_annotations",
       "remove_annotation",
     ]);
+    // The description must say WHEN to call the tool, not only what it does.
     const get = tools.find((t) => t.name === "get_annotations");
-    expect(get?.description ?? "").toMatch(/before editing/i);
+    expect(get?.description ?? "").toMatch(/before you edit/i);
   });
 
   it("round-trips annotate → get, reporting drift 'aligned' while code is unchanged", async () => {

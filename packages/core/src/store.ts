@@ -135,8 +135,8 @@ export class AnnotationStore {
     return this.#mutate((annotations) => {
       const index = annotations.findIndex((a) => a.id === id);
       if (index === -1) return false;
-      // Spliced in place: the array handed to a mutation IS the store's list,
-      // so replacing it wholesale would drop the freshly-read state.
+      // Cut it out in place: the array passed in IS the store's list, so
+      // swapping in a new array would throw away what we just read.
       annotations.splice(index, 1);
       return true;
     });
@@ -170,17 +170,17 @@ export class AnnotationStore {
   }
 
   /**
-   * Apply a change and persist it, without clobbering the other writer.
+   * Apply a change and save it, without overwriting the other writer's work.
    *
-   * The editor and the MCP server are separate processes over one file. Writing
-   * this instance's in-memory copy back wholesale would silently delete
-   * everything the other one wrote since we loaded, so every mutation re-reads
-   * the file first and applies itself to that state. Writes from this instance
-   * are chained so two concurrent callers cannot both read, then both write.
+   * The editor and the MCP server are two separate programs sharing one file.
+   * Writing our whole in-memory copy back would quietly delete everything the
+   * other one saved since we last read, so every change re-reads the file first
+   * and applies itself to that. Changes from one instance run one after another,
+   * so two callers here cannot both read and then both write.
    *
-   * The residual race is between processes: two of them can still read before
-   * either renames. That window is now microseconds rather than a whole session,
-   * and closing it entirely needs a lock file — deliberately not taken yet.
+   * One risk is left, between programs: both can still read before either one
+   * renames. That gap is now microseconds instead of a whole session. Closing it
+   * fully needs a lock file, which we have chosen not to add yet.
    */
   async #mutate<T>(apply: (annotations: Annotation[]) => T): Promise<T> {
     this.#ensureLoaded();
