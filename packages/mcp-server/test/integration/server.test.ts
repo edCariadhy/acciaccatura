@@ -133,6 +133,36 @@ describe("MCP server integration", () => {
     expect(text).toContain("agent note");
   });
 
+  it("tells the agent where the code moved to, and keeps the saved lines", async () => {
+    const snap = "export function add(a, b) {\n  return a + b;";
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: snap, body: "keep add() pure" },
+    });
+
+    // Someone adds an import at the top: the code is the same, two lines lower.
+    await writeFile(
+      join(root, "src", "math.ts"),
+      `import { z } from "./z.js";\n\n${"export function add(a, b) {\n  return a + b;\n}\n"}`,
+      "utf8",
+    );
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
+    expect(textOf(got as never)).toContain("src/math.ts:3-4 (moved from 1-2)");
+  });
+
+  it("says the code is not found rather than pointing at other code", async () => {
+    const snap = "export function add(a, b) {\n  return a + b;";
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: snap, body: "keep add() pure" },
+    });
+    await writeFile(join(root, "src", "math.ts"), "export const add = (a, b) => a + b;\n", "utf8");
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
+    expect(textOf(got as never)).toContain("(code not found)");
+  });
+
   it("rejects malformed input at the tool boundary (negative startLine)", async () => {
     const bad = await client.callTool({
       name: "annotate_code",

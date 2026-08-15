@@ -1,7 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { driftStatus, readRegion } from "@acciaccatura/core";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { driftStatus, findNoteLines, readRegion } from "@acciaccatura/core";
 import type { Annotation, AnnotationStore } from "@acciaccatura/core";
 
 /**
@@ -100,7 +103,19 @@ async function render(annotations: Annotation[], workspaceRoot: string): Promise
     annotations.map(async (a) => {
       const current = await readRegion(workspaceRoot, a.anchor);
       const drift = driftStatus(a.anchor, current);
-      const head = `#${a.id} [${a.provenance}/${a.trust}] ${a.anchor.file}:${a.anchor.startLine}-${a.anchor.endLine} (drift: ${drift})`;
+      // Saved lines say where the note was written. Say where the code is now,
+      // so an agent reads the right lines when the file has changed.
+      const fileText = await readFile(join(workspaceRoot, a.anchor.file), "utf8").catch(
+        () => undefined,
+      );
+      const found = findNoteLines(a.anchor, fileText);
+      const where =
+        found.state === "gone"
+          ? `${a.anchor.file}:${a.anchor.startLine}-${a.anchor.endLine} (code not found)`
+          : found.state === "moved"
+            ? `${a.anchor.file}:${found.startLine}-${found.endLine} (moved from ${a.anchor.startLine}-${a.anchor.endLine})`
+            : `${a.anchor.file}:${found.startLine}-${found.endLine}`;
+      const head = `#${a.id} [${a.provenance}/${a.trust}] ${where} (drift: ${drift})`;
       return `${head}\n${a.body}`;
     }),
   );

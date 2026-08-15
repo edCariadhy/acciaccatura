@@ -4,6 +4,44 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — A note's position is worked out on every read, never written back
+
+The saved anchor is now the capture and nothing else: what the writer pointed at,
+and when. Where the code sits today is worked out on each read by
+`findNoteLines(anchor, fileText)` in
+[anchor.ts](../../packages/core/src/anchor.ts), which answers `same`, `moved`
+(with the new lines), or `gone`. This is the change the storage standard asked
+for in [standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md).
+
+It fixes two problems at once, both measured:
+
+- **Drawing no longer writes.** Typing a line above a note in a 1,000-note
+  workspace used to rewrite the whole store — 1.1 MB written for one line of
+  typing. The store file is now byte-identical afterwards, checked by digest.
+- **A note cannot wander between branches.** Read against a branch that holds a
+  near-copy of the code it says `gone`; read against the original branch it says
+  `moved` and gives the new lines. The saved anchor stays put in both, so
+  switching branches can no longer leave a wrong position behind.
+
+Callers now show where the code is, not where it was:
+
+- the gutter icon and the side line follow the code, and the hover adds "The
+  code moved here from lines X–Y";
+- the sidebar shows `L4-L4 (moved)`, or a warning row reading "code not found",
+  and clicking a row opens the code's current position rather than the saved
+  one;
+- `get_annotations` reports `src/pay.ts:3-4 (moved from 1-2)` or
+  `(code not found)`. The `drift:` value keeps its three old words, so agents
+  that read it still work.
+
+Switching files now reloads the store first, so notes written by an agent over
+MCP appear without restarting the editor.
+
+**Checked in a real VS Code window**, not only in tests: code shifted down three
+lines, the note followed to line 4, the sidebar row read `L4-L4 (moved)` (read
+back out of the DOM), and the store digest was the same before and after.
+`npm test` 54/54.
+
 ## 2026-08-16 — Plain English, and names that say what they are for
 
 Writing level is now a rule, in
