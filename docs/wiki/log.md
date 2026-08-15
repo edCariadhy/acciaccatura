@@ -4,6 +4,32 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — Storage layout and lifecycle decided; a two-writer data loss found
+
+Recorded in
+[standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md):
+annotations are **short-lived working notes** between a human and agents (or
+between agents), long-lived intent belongs in an inline comment as an explicit
+non-goal, the store is **git-agnostic** with branch/commit as metadata rather
+than keys, and it shards **one file per annotated source file**.
+
+Found while checking how sharding interacts with the two-writer invariant, and
+reproduced against the built core: the editor and the MCP server each hold the
+whole store in memory and rewrite it wholesale, so **the last writer silently
+destroys the other's work** — three writes issued, two annotations on disk, a
+human note erased by an agent note. "Two writers, one store" does not currently
+hold. Sharding narrows the blast radius; the fix is read-before-write plus an
+atomic rename, required by the decision above.
+
+Measurements behind the decision, all against the real `AnnotationStore`:
+
+- one 6-line record is 880 bytes — 47% snapshot, 44% metadata, **9% the note
+  itself**; 1,000 notes ≈ 0.9 MB (2.5 MB at 30-line spans);
+- reading is cheap (2.8 ms to load 1,000) — **writing is not**: every add
+  rewrites the whole file, 1.8 MB per add at 2,000 notes;
+- typing a line above an annotation in a 1,000-note workspace rewrote the entire
+  store twice, 1.1 MB written for one line of typing.
+
 ## 2026-08-15 — A multi-line annotation reads as one annotation
 
 VS Code repeats `gutterIconPath` on **every** line of a decoration range —

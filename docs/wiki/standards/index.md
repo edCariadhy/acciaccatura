@@ -4,6 +4,7 @@ Project law. These are constraints, not preferences; a change that violates one
 must say so explicitly and justify itself.
 
 - [stable-contracts.md](stable-contracts.md) — how the MCP surface and on-disk schema may evolve.
+- [storage-and-lifecycle.md](storage-and-lifecycle.md) — what an annotation's life is, and the per-source-file store layout that works committed or not.
 - [engineering-principles.md](engineering-principles.md) — reviewability, docs-in-PR, and the boring-decision bias.
 - [frontmatter-schema.md](frontmatter-schema.md) — the conformance floor every wiki page must meet.
 
