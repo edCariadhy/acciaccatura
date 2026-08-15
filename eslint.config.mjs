@@ -21,6 +21,14 @@ export default tseslint.config(
     },
   },
   {
+    // Node ESM tooling: build/test/docs scripts and config files.
+    files: ["**/*.mjs"],
+    languageOptions: {
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+  },
+  {
     // e2e specs are plain CommonJS driven by Mocha's tdd globals; require() is
     // the correct import form for the VS Code host to load them.
     files: ["packages/extension/test/e2e/**/*.js"],

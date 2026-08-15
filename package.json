@@ -12,6 +12,7 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "docs:check": "node scripts/docs-check.mjs docs",
     "clean": "npm run clean --workspaces --if-present"
   },
   "engines": {
