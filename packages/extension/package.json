@@ -17,14 +17,65 @@
     "Other"
   ],
   "main": "./out/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
         "command": "acciaccatura.annotateSelection",
         "title": "Acciaccatura: Annotate Selection"
+      },
+      {
+        "command": "acciaccatura.refreshTree",
+        "title": "Refresh Annotations",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "acciaccatura.deleteAnnotation",
+        "title": "Delete Annotation"
+      },
+      {
+        "command": "acciaccatura.reviewAnnotation",
+        "title": "Promote to Authoritative"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "acciaccatura",
+          "title": "Acciaccatura",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "acciaccatura": [
+        {
+          "id": "acciaccatura.annotations",
+          "name": "Annotations"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "acciaccatura.refreshTree",
+          "when": "view == acciaccatura.annotations",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "acciaccatura.deleteAnnotation",
+          "when": "view == acciaccatura.annotations"
+        },
+        {
+          "command": "acciaccatura.reviewAnnotation",
+          "when": "view == acciaccatura.annotations && viewItem == suggested"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --format=cjs --platform=node --target=node18 --external:vscode --sourcemap",

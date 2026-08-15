@@ -44,3 +44,57 @@ export async function readRegion(root: string, anchor: Anchor): Promise<string |
     return undefined;
   }
 }
+
+/**
+ * Attempt to find a drifted anchor in the current file text.
+ * Uses a line-based sliding window, ignoring whitespace, to find the highest matching block.
+ * If the best match exceeds a similarity threshold (e.g., 80%), returns an updated Anchor.
+ * Otherwise, returns undefined, meaning the anchor is permanently lost ("degrade loudly").
+ */
+export function reanchor(anchor: Anchor, currentFileText: string): Anchor | undefined {
+  const originalLines = normalizeSnapshot(anchor.snapshot).split("\n");
+  const currentLines = currentFileText.split(/\r?\n/);
+  
+  const windowSize = originalLines.length;
+  if (currentLines.length < windowSize || windowSize === 0) return undefined;
+
+  // Strip all whitespace for robust comparison
+  const normalizeForMatch = (line: string) => line.replace(/\s+/g, "");
+  const normalizedOriginal = originalLines.map(normalizeForMatch);
+  
+  let bestMatchIndex = -1;
+  let bestMatchScore = -1;
+
+  for (let i = 0; i <= currentLines.length - windowSize; i++) {
+    let currentScore = 0;
+    for (let j = 0; j < windowSize; j++) {
+      const currentLine = currentLines[i + j] ?? "";
+      if (normalizedOriginal[j] === normalizeForMatch(currentLine)) {
+        currentScore++;
+      }
+    }
+    
+    if (currentScore > bestMatchScore) {
+      bestMatchScore = currentScore;
+      bestMatchIndex = i;
+    }
+  }
+
+  const similarity = bestMatchScore / windowSize;
+  
+  // Require at least 80% similarity. For 1-4 line snippets, requires 100%.
+  const threshold = windowSize < 5 ? 1.0 : 0.8;
+  if (similarity >= threshold) {
+    const newSnapshotLines = currentLines.slice(bestMatchIndex, bestMatchIndex + windowSize);
+    const newSnapshot = newSnapshotLines.join("\n");
+    return {
+      ...anchor,
+      startLine: bestMatchIndex + 1, // 1-based
+      endLine: bestMatchIndex + windowSize,
+      snapshot: newSnapshot,
+      snapshotHash: fingerprint(newSnapshot)
+    };
+  }
+
+  return undefined;
+}

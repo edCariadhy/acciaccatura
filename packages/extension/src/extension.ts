@@ -6,15 +6,54 @@ import type { CapturedSelection } from "@acciaccatura/core";
 
 import { captureAnnotation } from "./capture.js";
 
+import { DecorationManager, initDecorations } from "./decorations.js";
+import { AnnotationTreeProvider, AnnotationTreeItem } from "./treeView.js";
+
 /**
- * Entry point for the VS Code extension (the human writer).
- *
- * `activationEvents` is empty on purpose: VS Code activates only when a
- * contributed command first runs. The extension host is shared, so we do NO
- * work at startup — a large workspace must not pay an activation cost for a
- * feature the user has not invoked yet.
+ * Entry point for the VS Code extension.
  */
 export function activate(context: vscode.ExtensionContext): void {
+  initDecorations(context);
+  const folders = vscode.workspace.workspaceFolders;
+  const store = (folders && folders.length > 0)
+    ? new AnnotationStore(join(folders[0]!.uri.fsPath, ".acciaccatura", "annotations.json")) 
+    : undefined;
+
+  let decorationManager: DecorationManager | undefined;
+  let treeProvider: AnnotationTreeProvider | undefined;
+
+  if (store) {
+    store.load().then(() => {
+      decorationManager = new DecorationManager(store);
+      treeProvider = new AnnotationTreeProvider(store);
+      
+      vscode.window.registerTreeDataProvider("acciaccatura.annotations", treeProvider);
+      
+      // Initial decorations
+      decorationManager.updateDecorations(vscode.window.activeTextEditor).then(changed => {
+        if (changed) treeProvider?.refresh();
+      });
+
+      // Update on editor change
+      context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(async editor => {
+          const changed = await decorationManager?.updateDecorations(editor);
+          if (changed) treeProvider?.refresh();
+        })
+      );
+
+      // Update on document change
+      context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(async e => {
+          if (vscode.window.activeTextEditor && e.document === vscode.window.activeTextEditor.document) {
+            const changed = await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
+            if (changed) treeProvider?.refresh();
+          }
+        })
+      );
+    }).catch(() => {});
+  }
+
   const annotate = vscode.commands.registerCommand("acciaccatura.annotateSelection", async () => {
     const editor = vscode.window.activeTextEditor;
     const folder = editor ? vscode.workspace.getWorkspaceFolder(editor.document.uri) : undefined;
@@ -25,9 +64,8 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
 
-    // One store per workspace folder — the same JSON file the MCP server reads.
-    const store = new AnnotationStore(join(folder.uri.fsPath, ".acciaccatura", "annotations.json"));
-    await store.load();
+    const currentStore = store || new AnnotationStore(join(folder.uri.fsPath, ".acciaccatura", "annotations.json"));
+    await currentStore.load();
 
     await captureAnnotation({
       getSelection: () => selectionFrom(editor, folder),
@@ -39,15 +77,42 @@ export function activate(context: vscode.ExtensionContext): void {
             ignoreFocusOut: true,
           }),
         ),
-      store,
+      store: currentStore,
       notify: (level, message) =>
         level === "info"
           ? void vscode.window.showInformationMessage(`Acciaccatura: ${message}`)
           : void vscode.window.showWarningMessage(`Acciaccatura: ${message}`),
     });
+    
+    treeProvider?.refresh();
+    decorationManager?.updateDecorations(editor);
   });
 
-  context.subscriptions.push(annotate);
+  const refreshTree = vscode.commands.registerCommand("acciaccatura.refreshTree", () => {
+    treeProvider?.refresh();
+  });
+
+  const deleteAnno = vscode.commands.registerCommand("acciaccatura.deleteAnnotation", async (item: AnnotationTreeItem) => {
+    if (store && item && item.annotation) {
+      await store.remove(item.annotation.id);
+      treeProvider?.refresh();
+      decorationManager?.updateDecorations(vscode.window.activeTextEditor);
+    }
+  });
+
+  const reviewAnno = vscode.commands.registerCommand("acciaccatura.reviewAnnotation", async (item: AnnotationTreeItem) => {
+    if (store && item && item.annotation) {
+      await store.remove(item.annotation.id);
+      await store.add({
+        ...item.annotation,
+        trust: "authoritative",
+      });
+      treeProvider?.refresh();
+      decorationManager?.updateDecorations(vscode.window.activeTextEditor);
+    }
+  });
+
+  context.subscriptions.push(annotate, refreshTree, deleteAnno, reviewAnno);
 }
 
 export function deactivate(): void {
