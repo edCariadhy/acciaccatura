@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnnotationStore } from "../src/store.js";
 import type { NewAnnotation } from "../src/types.js";
@@ -93,6 +93,66 @@ describe("AnnotationStore", () => {
     expect(await store.remove(saved.id)).toBe(true);
     expect(await store.remove(saved.id)).toBe(false);
     expect(store.get(saved.id)).toBeUndefined();
+  });
+
+  it("keeps id, createdAt, and provenance when updating in place", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const saved = await store.add(draft({ provenance: "agent" }));
+
+    // Anything holding the id — a cached MCP result, a tree-view selection —
+    // must still resolve after an edit, so identity cannot be reissued.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(saved.createdAt) + 1000));
+    const updated = await store.update(saved.id, { trust: "authoritative" });
+    vi.useRealTimers();
+
+    expect(updated?.id).toBe(saved.id);
+    expect(updated?.createdAt).toBe(saved.createdAt);
+    expect(updated?.provenance).toBe("agent");
+    expect(updated?.body).toBe(saved.body);
+    expect(updated?.trust).toBe("authoritative");
+    expect(updated?.updatedAt > saved.updatedAt).toBe(true);
+    expect(store.all()).toHaveLength(1);
+    expect(store.get(saved.id)?.trust).toBe("authoritative");
+  });
+
+  it("re-derives the snapshot hash when an update moves the anchor", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const saved = await store.add(draft());
+
+    // A healed anchor from reanchor(): new lines, new snapshot, same note.
+    const updated = await store.update(saved.id, {
+      anchor: { file: "src/a.ts", startLine: 40, endLine: 40, snapshot: "const x = 2;\r\n" },
+    });
+
+    expect(updated?.anchor.startLine).toBe(40);
+    // Normalized before hashing, like add(), so a CRLF file is not falsely drifted.
+    expect(updated?.anchor.snapshot).toBe("const x = 2;\n");
+    expect(updated?.anchor.snapshotHash).not.toBe(saved.anchor.snapshotHash);
+    expect(updated?.anchor.snapshotHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("reports an unknown id instead of resurrecting the annotation", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const saved = await store.add(draft());
+    await store.remove(saved.id);
+
+    expect(await store.update(saved.id, { body: "back from the dead" })).toBeUndefined();
+    expect(store.all()).toHaveLength(0);
+  });
+
+  it("persists updates across reloads", async () => {
+    const first = new AnnotationStore(storePath);
+    await first.load();
+    const saved = await first.add(draft());
+    await first.update(saved.id, { body: "revised" });
+
+    const second = new AnnotationStore(storePath);
+    await second.load();
+    expect(second.get(saved.id)?.body).toBe("revised");
   });
 
   it("writes newline-terminated pretty JSON", async () => {

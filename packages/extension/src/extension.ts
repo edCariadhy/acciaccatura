@@ -102,11 +102,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const reviewAnno = vscode.commands.registerCommand("acciaccatura.reviewAnnotation", async (item: AnnotationTreeItem) => {
     if (store && item && item.annotation) {
-      await store.remove(item.annotation.id);
-      await store.add({
-        ...item.annotation,
-        trust: "authoritative",
-      });
+      // Promotion is an edit, not a rewrite: the note keeps its id and its
+      // original createdAt, and stays attributed to the agent that wrote it.
+      await store.update(item.annotation.id, { trust: "authoritative" });
       treeProvider?.refresh();
       decorationManager?.updateDecorations(vscode.window.activeTextEditor);
     }

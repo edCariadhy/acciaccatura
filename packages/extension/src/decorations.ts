@@ -53,15 +53,10 @@ export class DecorationManager {
       if (status === 'drifted' || status === 'unknown') {
         const reanchored = reanchor(currentAnchor, fileText);
         if (reanchored) {
-          currentAnchor = reanchored;
-          await this.store.remove(annotation.id);
-          await this.store.add({
-            body: annotation.body,
-            anchor: currentAnchor,
-            provenance: annotation.provenance,
-            trust: annotation.trust,
-            author: annotation.author
-          });
+          // In place, so the annotation keeps its id: anything holding the old
+          // one (a cached MCP result, a tree selection) survives the heal.
+          const healed = await this.store.update(annotation.id, { anchor: reanchored });
+          currentAnchor = healed?.anchor ?? reanchored;
           storeChanged = true;
         } else {
           // Permanently lost! Degrade loudly. Display at line 1.
