@@ -41,6 +41,7 @@ npm install                 # install all workspaces
 npm run build               # build core → mcp-server (tsc) + extension (esbuild)
 npm test                    # vitest: core unit + mcp-server integration + extension unit
 npm run typecheck           # tsc --noEmit across workspaces
+npm run lint                # eslint (flat config) over all packages
 ```
 
 `npm test` needs no prior build: the in-repo vitest configs alias `@acciaccatura/core`
@@ -76,8 +77,9 @@ Note: `npm audit` reports dev-only advisories in vitest's transitive `esbuild`/`
 (the esbuild dev-server issue) — not in shipped code. The fix is a breaking vitest v4 bump;
 left for a deliberate upgrade, not an incidental one.
 
-There is no linter configured yet (only `tsc` strict typecheck). Add one deliberately if
-wanted; don't invoke `eslint`/`prettier` scripts that don't exist.
+Lint with ESLint 9 flat config ([eslint.config.mjs](eslint.config.mjs), typescript-eslint):
+`npm run lint` (or `lint:fix`). It's part of the CI `unit` job. There is no Prettier;
+don't invoke a `prettier` script that doesn't exist.
 
 ## How this repo fits a two-stage workflow
 
