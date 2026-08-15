@@ -1,0 +1,18 @@
+node_modules/
+dist/
+out/
+*.vsix
+*.tsbuildinfo
+coverage/
+.DS_Store
+.vscode-test/
+
+# Ignore personal editor state, but keep the shared run configs that make
+# F5 "Run Extension" work for everyone.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+
+# Local annotation store written into a workspace by the extension / server
+.acciaccatura/

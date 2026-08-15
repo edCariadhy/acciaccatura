@@ -1,0 +1,39 @@
+{
+  "name": "acciaccatura",
+  "displayName": "Acciaccatura",
+  "description": "Leave AI-readable annotations on code; agents read them over MCP.",
+  "version": "0.0.0",
+  "license": "MIT",
+  "publisher": "acciaccatura",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edCariadhy/acciaccatura.git",
+    "directory": "packages/extension"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "acciaccatura.annotateSelection",
+        "title": "Acciaccatura: Annotate Selection"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf out"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.3"
+  }
+}
