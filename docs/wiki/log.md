@@ -60,6 +60,42 @@ screenshotted before and after. Note the spine sits at column 0, the same
 place VS Code draws bracket-pair guides; the brighter blue is what separates
 them.
 
+## 2026-08-16 — A re-anchor must win distinctively, not just win
+
+Found while probing how anchoring behaves across git branches (a checkout is
+just a wholesale content swap, so it can be simulated headlessly against
+`@acciaccatura/core` — no VS Code needed).
+
+`reanchor()` took the highest-scoring window, full stop. On a branch carrying a
+near-identical copy of the annotated code — a refactor in progress, a legacy
+fork of a function — the untouched copy scored 5/6 while the real, *edited*
+original scored 4/6. The note silently attached to the wrong function, reported
+no drift, and the heal was persisted; checking out the original branch healed it
+back. The annotation ping-ponged between two functions.
+
+[anchor.ts](../../packages/core/src/anchor.ts) now requires the winner to beat
+the best **disjoint** rival by at least a quarter of the snippet. Overlapping
+rivals don't count — repeated lines make neighbouring windows score alike, but
+they describe the same region, not a different one. Below that margin the
+result is `undefined`: [degrade loudly](standards/engineering-principles.md).
+
+Worth stating plainly, because the first attempt was wrong: rejecting only
+*ties* does not fix this. In the case above nothing tied — the decoy won
+outright. The margin is what catches it, and
+[anchor.test.ts](../../packages/core/test/anchor.test.ts) now pins both shapes
+(tie, and decoy-outscores-original) plus the overlapping-rival case that must
+still heal.
+
+Effect on the branch scenario: on the branch with the decoy the note degrades
+loudly instead of lying, and because no wrong heal is persisted, returning to
+the original branch reads `aligned` again.
+
+**Still open** — the wider question this came from: an anchor's line numbers
+still overlay whatever occupies them on another branch, and healing remains
+destructive (it overwrites the original capture). That is a lifecycle question —
+are annotations permanent, or resolvable like a PR comment? — being decided
+before any branch-aware anchoring is built.
+
 ## 2026-08-15 — Annotations keep their id across a re-anchor
 
 Closes the known gap logged below. [store.ts](../../packages/core/src/store.ts)

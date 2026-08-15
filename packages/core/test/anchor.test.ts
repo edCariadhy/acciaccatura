@@ -102,6 +102,64 @@ describe("reanchor", () => {
     expect(result).toBeUndefined();
   });
 
+  it("refuses to guess when two separate regions match equally well", () => {
+    // The branch-switch case: a refactor left a near-identical copy of the
+    // annotated function earlier in the file. Both score 5/6, so picking the
+    // first one is a coin flip — and a note silently attached to the WRONG
+    // function is worse than no note at all.
+    const block = (name: string) =>
+      [
+        `export function ${name}(order, ctx) {`,
+        "  const rate = ctx.rates[order.currency];",
+        "  const base = order.lines.reduce((s, l) => s + l.amount, 0);",
+        "  const tax = base * rate;",
+        "  return { base, tax, total: base + tax };",
+        "}",
+      ].join("\n");
+
+    const anchor = { ...anchorFor(block("priceOrder")), startLine: 1, endLine: 6 };
+    const newText = `${block("priceOrderLegacy")}\n\n${block("priceOrderV2")}\n`;
+
+    expect(reanchor(anchor, newText)).toBeUndefined();
+  });
+
+  it("refuses to guess when a decoy outscores the real, edited original", () => {
+    // The branch-switch case that matters, and the one an equality check on the
+    // scores does NOT catch: on this branch the annotated function gained a
+    // line (4/6) while an untouched legacy copy still matches 5/6. The decoy
+    // wins outright, so nothing ties — only the margin rule catches it.
+    const block = (name: string, extra = "") =>
+      [
+        `export function ${name}(order, ctx) {`,
+        "  const rate = ctx.rates[order.currency];",
+        "  const base = order.lines.reduce((s, l) => s + l.amount, 0);",
+        "  const tax = base * rate;",
+        ...(extra ? [extra] : []),
+        "  return { base, tax, total: base + tax };",
+        "}",
+      ].join("\n");
+
+    const anchor = { ...anchorFor(block("priceOrder")), startLine: 1, endLine: 6 };
+    const newText = `${block("priceOrderLegacy")}\n\n${block(
+      "priceOrder",
+      "  if (ctx.exempt) return { base, tax: 0, total: base };",
+    )}\n`;
+
+    expect(reanchor(anchor, newText)).toBeUndefined();
+  });
+
+  it("still heals when the only rival match overlaps the winner", () => {
+    // Repeated lines make neighbouring windows tie, but they describe the same
+    // region — that is not the ambiguity worth degrading over.
+    const snapshot = "  log();\n  log();\n  log();\n  log();\n  done();";
+    const anchor = { ...anchorFor(snapshot), startLine: 1, endLine: 5 };
+    const newText = "header();\n  log();\n  log();\n  log();\n  log();\n  done();\n";
+
+    const result = reanchor(anchor, newText);
+    expect(result?.startLine).toBe(2);
+    expect(result?.endLine).toBe(6);
+  });
+
   it("finds the anchor with partial matches (>=80%) for large blocks", () => {
     const snapshot = Array.from({length: 10}, (_, i) => `line ${i}`).join("\n");
     const anchor = anchorFor(snapshot);
