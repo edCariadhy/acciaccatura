@@ -4,6 +4,36 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-15 — A multi-line annotation reads as one annotation
+
+VS Code repeats `gutterIconPath` on **every** line of a decoration range —
+verified in a real Extension Development Host, not assumed — so a three-line
+note drew three identical bubbles and a thirty-line note would draw thirty.
+Three icons read as three separate annotations.
+
+[decorations.ts](../../packages/extension/src/decorations.ts) now splits the
+job across two decoration types:
+
+- the **icon** marks *where* the note is attached — first line only, no hover;
+- the **spine** marks *how far* it reaches — a whole-line left border plus the
+  existing tint across the range, and it carries the hover, so hovering
+  anywhere in the span shows the note.
+
+The hover lives on exactly one of the two on purpose: both cover the first
+line, and two `hoverMessage`s there would show the note twice.
+
+There is no bracket primitive in the VS Code decoration API. A true bracket
+(arms at the top and bottom) would need three decoration types and three
+SVGs, all kept aligned across a re-anchor — deliberately not taken, since
+`updateDecorations` runs on every `onDidChangeTextDocument`, i.e. every
+keystroke, and [the extension host is shared](../../CLAUDE.md).
+
+**Verified**: `build`, `typecheck`, `lint` green, and a three-line annotation
+driven live in a real dev host — one icon, spine spanning the range,
+screenshotted before and after. Note the spine sits at column 0, the same
+place VS Code draws bracket-pair guides; the brighter blue is what separates
+them.
+
 ## 2026-08-15 — Annotations keep their id across a re-anchor
 
 Closes the known gap logged below. [store.ts](../../packages/core/src/store.ts)
