@@ -11,4 +11,5 @@ Conformance floor for every page here: see
 ## Sections
 
 - [standards/](standards/index.md) — engineering principles and contracts that govern the code.
+- [roadmap.md](roadmap.md) — project roadmap outlining current state and upcoming phases.
 - [log.md](log.md) — running record of what's built, verified, and open, most recent first.

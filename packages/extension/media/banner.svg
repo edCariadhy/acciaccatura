@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+
+    <!-- Accent Gradient (Vibrant Cyan to Violet) -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+
+    <!-- Slash Gradient -->
+    <linearGradient id="slashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#fb7185"/>
+    </linearGradient>
+
+    <!-- Subtle Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Container Box -->
+  <rect width="800" height="240" rx="16" fill="url(#bgGrad)" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- Subtle Code Line Markers (Background Decor) -->
+  <g opacity="0.15" stroke="#8b949e" stroke-width="2" stroke-linecap="round">
+    <line x1="280" y1="65" x2="340" y2="65" />
+    <line x1="355" y1="65" x2="420" y2="65" />
+    <line x1="280" y1="185" x2="380" y2="185" />
+  </g>
+
+  <!-- ICON MARK (Left) -->
+  <g id="icon-mark" transform="translate(60, 40)">
+    <!-- Terminal / Editor Badge Container -->
+    <rect width="160" height="160" rx="28" fill="#1f242c" stroke="#38414e" stroke-width="2"/>
+
+    <!-- Code Bracket Elements < > -->
+    <path d="M 38 65 L 22 80 L 38 95" fill="none" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 122 65 L 138 80 L 122 95" fill="none" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Acciaccatura Note Composition -->
+    <!-- Notehead (Tilted Ellipse) -->
+    <ellipse cx="62" cy="115" rx="18" ry="13" transform="rotate(-26 62 115)" fill="url(#accentGrad)" filter="url(#glow)"/>
+
+    <!-- Note Stem -->
+    <rect x="74" y="38" width="6.5" height="76" rx="3.25" fill="url(#accentGrad)"/>
+
+    <!-- Single Flag / Hook -->
+    <path d="M 80.5 40 C 95 44, 108 56, 106 72 C 104 80, 94 82, 80.5 80" fill="none" stroke="url(#accentGrad)" stroke-width="6.5" stroke-linecap="round"/>
+
+    <!-- The Acciaccatura Slash (Distinctive Diagonal Stroke / Code Comment Metaphor) -->
+    <line x1="52" y1="78" x2="108" y2="44" stroke="url(#slashGrad)" stroke-width="6" stroke-linecap="round" filter="url(#glow)"/>
+
+    <!-- Annotation Indicator Pin/Dot -->
+    <circle cx="108" cy="44" r="3.5" fill="#ffffff"/>
+  </g>
+
+  <!-- LOGO TEXT & TYPOGRAPHY (Right) -->
+  <g id="logotype" transform="translate(260, 128)">
+    <!-- Primary Product Name -->
+    <text font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, monospace" font-size="46" font-weight="800" fill="#f0f6fc" letter-spacing="-0.5">
+      acciaccatura
+    </text>
+
+    <!-- Trailing Terminal Cursor / Prompt -->
+    <rect x="305" y="-36" width="12" height="42" rx="2" fill="#38bdf8" opacity="0.85">
+      <animate attributeName="opacity" values="0.85;0;0.85" dur="1.2s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- Subtitle / Descriptor -->
+    <text y="42" font-family="'JetBrains Mono', 'Fira Code', 'Courier New', monospace" font-size="16" font-weight="500" fill="#8b949e" letter-spacing="1.5">
+      // REVIEW YOUR AGENT'S WORK
+    </text>
+  </g>
+</svg>

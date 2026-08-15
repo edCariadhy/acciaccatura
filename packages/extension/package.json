@@ -2,9 +2,21 @@
   "name": "acciaccatura",
   "displayName": "Acciaccatura",
   "description": "Leave AI-readable annotations on code; agents read them over MCP.",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "license": "MIT",
   "publisher": "acciaccatura",
+  "icon": "media/icon.png",
+  "keywords": [
+    "annotations",
+    "mcp",
+    "agent",
+    "ai",
+    "code review"
+  ],
+  "galleryBanner": {
+    "color": "#0d1117",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/edCariadhy/acciaccatura.git",
@@ -83,17 +95,18 @@
     "test": "vitest run",
     "test:e2e": "vscode-test",
     "pretest:e2e": "npm run build",
+    "package": "vsce package --no-dependencies",
+    "prepackage": "npm run build",
     "clean": "rm -rf out"
   },
-  "dependencies": {
-    "@acciaccatura/core": "*"
-  },
   "devDependencies": {
+    "@acciaccatura/core": "*",
     "@types/mocha": "^10.0.7",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.23.0",
     "mocha": "^10.7.0",
     "typescript": "^5.6.3",
