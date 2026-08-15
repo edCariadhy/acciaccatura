@@ -11,18 +11,26 @@ delivered at the protocol layer: solve it once over MCP so every agent benefits,
 users of one IDE.
 
 Stack: TypeScript on Node 20+, an npm-workspaces monorepo. The MCP server uses
-`@modelcontextprotocol/sdk` (installed: 1.30.0) + `zod`; tests use `vitest`. The extension
-uses the VS Code extension API (`@types/vscode`).
+`@modelcontextprotocol/sdk` (installed: 1.30.0) + `zod`; unit/integration tests use
+`vitest`; the extension bundles with `esbuild` and has real end-to-end tests via
+`@vscode/test-electron`.
 
 ## Layout
 
-- `packages/mcp-server` — the core, **licensed AGPL-3.0-or-later**. Annotation model,
-  local JSON store, MCP stdio server. Build this first; the extension depends on its model.
-- `packages/extension` — the VS Code extension (human writer), **licensed MIT**. Currently
-  a lazy-activated command skeleton; annotation capture is a `TODO(first-slice)`.
+Three packages, dependency order `core → { mcp-server, extension }`:
 
-The two licenses differ by design: the extension is MIT, the server is AGPL-3.0-or-later.
-Keep new server code out of the extension package and vice versa.
+- `packages/core` — **licensed MIT**. The shared annotation model, JSON store, anchoring/
+  drift logic, and the pure `annotationFromSelection` helper. No `vscode`, no MCP — just
+  the domain. Both other packages depend on it. **Build first.**
+- `packages/mcp-server` — **licensed AGPL-3.0-or-later**. Only the MCP glue (stdio server +
+  tool definitions) over `@acciaccatura/core`.
+- `packages/extension` — the VS Code extension (human writer), **licensed MIT**. Thin
+  `vscode` command (`acciaccatura.annotateSelection`) wrapping a testable `capture` seam
+  that writes to the same core store with `provenance: "human"`.
+
+The three licenses are deliberate: `core` is MIT so the **MIT** extension can reuse it
+without linking the **AGPL** server. Do not make the extension depend on `mcp-server`, and
+keep shared/domain logic in `core` rather than duplicating it.
 
 ## Commands (verified working)
 
@@ -30,17 +38,25 @@ Run from the repo root. Workspace scripts fan out via `--workspaces --if-present
 
 ```bash
 npm install                 # install all workspaces
-npm run build               # tsc build both packages
-npm test                    # vitest (mcp-server); extension has no tests yet
+npm run build               # build core → mcp-server (tsc) + extension (esbuild)
+npm test                    # vitest: core unit + mcp-server integration + extension unit
 npm run typecheck           # tsc --noEmit across workspaces
 ```
 
-Scoped to one package / a single test:
+`npm test` needs no prior build: the in-repo vitest configs alias `@acciaccatura/core`
+to its TypeScript source, so the suites run from a clean checkout. Scoped / single test:
 
 ```bash
-npm run build --workspace @acciaccatura/mcp-server
-npm test --workspace @acciaccatura/mcp-server -- test/anchor.test.ts   # one file
-npm test --workspace @acciaccatura/mcp-server -- -t "drifted"          # one test by name
+npm run build --workspace @acciaccatura/core          # deps build first
+npm test --workspace @acciaccatura/core -- test/anchor.test.ts   # one file
+npm test --workspace @acciaccatura/mcp-server -- -t "drifted"    # one test by name
+```
+
+Extension end-to-end (launches a real VS Code, downloads it on first run — kept OUT of
+`npm test`):
+
+```bash
+npm run test:e2e --workspace acciaccatura
 ```
 
 Smoke-test the server over stdio (initialize + list tools):
@@ -51,6 +67,10 @@ printf '%s\n%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"prot
 
 Server config via env: `ACCIACCATURA_WORKSPACE` (anchor-resolution root, default cwd) and
 `ACCIACCATURA_STORE` (default `<workspace>/.acciaccatura/annotations.json`).
+
+CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) — a `unit` job (build + typecheck +
+vitest) on every push/PR, and a heavier `e2e` job (real VS Code under xvfb, Linux-only, VS
+Code cached) gated to PRs + a nightly cron, never plain pushes.
 
 Note: `npm audit` reports dev-only advisories in vitest's transitive `esbuild`/`vite`
 (the esbuild dev-server issue) — not in shipped code. The fix is a breaking vitest v4 bump;
@@ -94,18 +114,21 @@ implementer must respect. Flag it explicitly when a change violates one.
 
 ## Where the invariants live in code
 
-The scaffold already encodes several of these; keep them enforced as the code grows.
+The code already encodes several of these; keep them enforced as it grows.
 
-- *Bounded context* → `AnnotationStore.query` in [store.ts](packages/mcp-server/src/store.ts)
+- *Bounded context* → `AnnotationStore.query` in [store.ts](packages/core/src/store.ts)
   ranks and caps results (`DEFAULT_LIMIT = 3`). Never add an unbounded query path for agents;
   `all()` is for tooling/tests only.
-- *Anchoring / degrade loudly* → [anchor.ts](packages/mcp-server/src/anchor.ts) captures a
+- *Anchoring / degrade loudly* → [anchor.ts](packages/core/src/anchor.ts) captures a
   `snapshot` + `snapshotHash` on write and `driftStatus` returns `aligned | drifted | unknown`
-  — `unknown` (never a fabricated `aligned`) when the code can't be read. The adversarial
-  cases live in `test/anchor.test.ts`; extend them before improving re-anchoring.
+  — `unknown` (never a fabricated `aligned`) when the code can't be read. Snapshots are
+  newline-normalized before hashing so CRLF files don't read as falsely drifted. The
+  adversarial cases live in `packages/core/test/anchor.test.ts`; extend them before improving
+  re-anchoring.
 - *Two writers, one store* → provenance/trust are on every record in
-  [types.ts](packages/mcp-server/src/types.ts); the extension writes with `provenance: "human"`,
-  the server with `"agent"`, through the same `AnnotationStore`.
+  [types.ts](packages/core/src/types.ts); the extension writes `provenance: "human"` (via
+  [capture.ts](packages/extension/src/capture.ts) + `annotationFromSelection`), the server
+  writes `"agent"`, through the same `AnnotationStore`.
 - *MCP is a product API* → tool descriptions in [server.ts](packages/mcp-server/src/server.ts)
   state *when* to call each tool. If you change a tool's behavior, change its description in the
   same commit.

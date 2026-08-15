@@ -4,9 +4,18 @@ import { join } from "node:path";
 
 import type { Anchor, DriftStatus } from "./types.js";
 
+/**
+ * Normalize line endings before hashing or comparing snapshots. The read side
+ * ({@link readRegion}) joins lines with "\n", so the write side must too — else
+ * a CRLF file would hash differently and read as falsely "drifted".
+ */
+export function normalizeSnapshot(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
 /** Stable content fingerprint used to detect anchor drift. */
 export function fingerprint(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+  return createHash("sha256").update(normalizeSnapshot(text), "utf8").digest("hex");
 }
 
 /**

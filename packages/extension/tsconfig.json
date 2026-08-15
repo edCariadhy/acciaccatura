@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "Node16",
-    "moduleResolution": "Node16",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "lib": ["ES2022"],
-    "outDir": "out",
+    "types": ["node", "vscode", "mocha"],
+    "noEmit": true,
     "rootDir": "src",
     "strict": true,
     "noUncheckedIndexedAccess": true,

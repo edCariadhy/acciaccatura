@@ -1,9 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { driftStatus, readRegion } from "./anchor.js";
-import type { AnnotationStore } from "./store.js";
-import type { Annotation } from "./types.js";
+import { driftStatus, readRegion } from "@acciaccatura/core";
+import type { Annotation, AnnotationStore } from "@acciaccatura/core";
 
 /**
  * Build the Acciaccatura MCP server over a loaded store.

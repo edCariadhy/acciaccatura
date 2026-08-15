@@ -2,8 +2,9 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { join, resolve } from "node:path";
 
+import { AnnotationStore } from "@acciaccatura/core";
+
 import { createServer } from "./server.js";
-import { AnnotationStore } from "./store.js";
 
 /**
  * Entry point for the local MCP server. Speaks MCP over stdio so an

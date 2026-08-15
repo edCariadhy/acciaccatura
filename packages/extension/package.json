@@ -27,13 +27,25 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --format=cjs --platform=node --target=node18 --external:vscode --sourcemap",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "vscode-test",
+    "pretest:e2e": "npm run build",
     "clean": "rm -rf out"
   },
+  "dependencies": {
+    "@acciaccatura/core": "*"
+  },
   "devDependencies": {
+    "@types/mocha": "^10.0.7",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
-    "typescript": "^5.6.3"
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.23.0",
+    "mocha": "^10.7.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.0"
   }
 }

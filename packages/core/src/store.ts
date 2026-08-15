@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { fingerprint } from "./anchor.js";
+import { fingerprint, normalizeSnapshot } from "./anchor.js";
 import type { Annotation, NewAnnotation } from "./types.js";
 
 /**
@@ -59,10 +59,12 @@ export class AnnotationStore {
   async add(input: NewAnnotation): Promise<Annotation> {
     this.#ensureLoaded();
     const now = new Date().toISOString();
+    // Store the normalized snapshot so it matches its hash and the read side.
+    const snapshot = normalizeSnapshot(input.anchor.snapshot);
     const annotation: Annotation = {
       id: randomUUID(),
       body: input.body,
-      anchor: { ...input.anchor, snapshotHash: fingerprint(input.anchor.snapshot) },
+      anchor: { ...input.anchor, snapshot, snapshotHash: fingerprint(snapshot) },
       provenance: input.provenance,
       // Human notes are authoritative by default; agent notes are suggestions
       // until a human confirms them.
