@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
@@ -51,6 +51,9 @@ export class AnnotationStore {
   readonly #path: string;
   #data: StoreFile = { version: 1, annotations: [] };
   #loaded = false;
+  /** Serialises this instance's writes; see {@link AnnotationStore.mutate}. */
+  #writes: Promise<unknown> = Promise.resolve();
+  #tempCounter = 0;
 
   constructor(path: string) {
     this.#path = path;
@@ -58,19 +61,22 @@ export class AnnotationStore {
 
   /** Load from disk. A missing file is an empty store, not an error. */
   async load(): Promise<void> {
-    try {
-      const raw = await readFile(this.#path, "utf8");
-      const parsed = JSON.parse(raw) as Partial<StoreFile>;
-      this.#data = { version: 1, annotations: parsed.annotations ?? [] };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-      this.#data = { version: 1, annotations: [] };
-    }
+    await this.#readFromDisk();
     this.#loaded = true;
   }
 
-  async add(input: NewAnnotation): Promise<Annotation> {
+  /**
+   * Re-read the file, picking up anything the other writer has done since.
+   * Readers that stay alive across writes — the MCP server between tool calls,
+   * the editor between renders — need this, because the in-memory copy is a
+   * snapshot from whenever it was last read, not a live view.
+   */
+  async reload(): Promise<void> {
     this.#ensureLoaded();
+    await this.#readFromDisk();
+  }
+
+  async add(input: NewAnnotation): Promise<Annotation> {
     const now = new Date().toISOString();
     const annotation: Annotation = {
       id: randomUUID(),
@@ -84,8 +90,9 @@ export class AnnotationStore {
       createdAt: now,
       updatedAt: now,
     };
-    this.#data.annotations.push(annotation);
-    await this.#persist();
+    await this.#mutate((annotations) => {
+      annotations.push(annotation);
+    });
     return annotation;
   }
 
@@ -99,22 +106,24 @@ export class AnnotationStore {
    * — the caller decides how to degrade; we never resurrect a deleted note.
    */
   async update(id: string, changes: AnnotationUpdate): Promise<Annotation | undefined> {
-    this.#ensureLoaded();
-    const index = this.#data.annotations.findIndex((a) => a.id === id);
-    if (index === -1) return undefined;
+    return this.#mutate((annotations) => {
+      // Resolved against the freshly-read list: another writer may have moved,
+      // changed, or deleted this record since we last looked.
+      const index = annotations.findIndex((a) => a.id === id);
+      if (index === -1) return undefined;
 
-    const existing = this.#data.annotations[index]!;
-    const updated: Annotation = {
-      ...existing,
-      body: changes.body ?? existing.body,
-      anchor: changes.anchor ? sealAnchor(changes.anchor) : existing.anchor,
-      trust: changes.trust ?? existing.trust,
-      author: changes.author ?? existing.author,
-      updatedAt: new Date().toISOString(),
-    };
-    this.#data.annotations[index] = updated;
-    await this.#persist();
-    return updated;
+      const existing = annotations[index]!;
+      const updated: Annotation = {
+        ...existing,
+        body: changes.body ?? existing.body,
+        anchor: changes.anchor ? sealAnchor(changes.anchor) : existing.anchor,
+        trust: changes.trust ?? existing.trust,
+        author: changes.author ?? existing.author,
+        updatedAt: new Date().toISOString(),
+      };
+      annotations[index] = updated;
+      return updated;
+    });
   }
 
   get(id: string): Annotation | undefined {
@@ -123,12 +132,14 @@ export class AnnotationStore {
   }
 
   async remove(id: string): Promise<boolean> {
-    this.#ensureLoaded();
-    const before = this.#data.annotations.length;
-    this.#data.annotations = this.#data.annotations.filter((a) => a.id !== id);
-    const removed = this.#data.annotations.length < before;
-    if (removed) await this.#persist();
-    return removed;
+    return this.#mutate((annotations) => {
+      const index = annotations.findIndex((a) => a.id === id);
+      if (index === -1) return false;
+      // Spliced in place: the array handed to a mutation IS the store's list,
+      // so replacing it wholesale would drop the freshly-read state.
+      annotations.splice(index, 1);
+      return true;
+    });
   }
 
   /**
@@ -158,9 +169,59 @@ export class AnnotationStore {
     }
   }
 
+  /**
+   * Apply a change and persist it, without clobbering the other writer.
+   *
+   * The editor and the MCP server are separate processes over one file. Writing
+   * this instance's in-memory copy back wholesale would silently delete
+   * everything the other one wrote since we loaded, so every mutation re-reads
+   * the file first and applies itself to that state. Writes from this instance
+   * are chained so two concurrent callers cannot both read, then both write.
+   *
+   * The residual race is between processes: two of them can still read before
+   * either renames. That window is now microseconds rather than a whole session,
+   * and closing it entirely needs a lock file — deliberately not taken yet.
+   */
+  async #mutate<T>(apply: (annotations: Annotation[]) => T): Promise<T> {
+    this.#ensureLoaded();
+    const run = this.#writes.then(async () => {
+      await this.#readFromDisk();
+      const result = apply(this.#data.annotations);
+      await this.#persist();
+      return result;
+    });
+    // Keep the chain alive even if this write fails, so one error does not
+    // wedge every later write on this instance.
+    this.#writes = run.catch(() => undefined);
+    return run;
+  }
+
+  async #readFromDisk(): Promise<void> {
+    try {
+      const raw = await readFile(this.#path, "utf8");
+      const parsed = JSON.parse(raw) as Partial<StoreFile>;
+      this.#data = { version: 1, annotations: parsed.annotations ?? [] };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      this.#data = { version: 1, annotations: [] };
+    }
+  }
+
+  /**
+   * Write via a temp file and rename. `rename` is atomic within a filesystem,
+   * so a reader — or a crash — sees either the old file or the new one, never a
+   * half-written store.
+   */
   async #persist(): Promise<void> {
     await mkdir(dirname(this.#path), { recursive: true });
-    await writeFile(this.#path, `${JSON.stringify(this.#data, null, 2)}\n`, "utf8");
+    const temp = `${this.#path}.${process.pid}.${this.#tempCounter++}.tmp`;
+    try {
+      await writeFile(temp, `${JSON.stringify(this.#data, null, 2)}\n`, "utf8");
+      await rename(temp, this.#path);
+    } catch (err) {
+      await rm(temp, { force: true });
+      throw err;
+    }
   }
 }
 

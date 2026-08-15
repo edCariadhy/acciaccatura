@@ -4,6 +4,43 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — Two writers, one store, no data loss
+
+Fixes the data loss found below, both halves of it.
+
+**Writes no longer clobber.** Every mutation in
+[store.ts](../../packages/core/src/store.ts) now goes through one private
+`#mutate`: re-read the file, apply the change to *that* state, then persist by
+writing a temp file and `rename`-ing it into place (atomic within a filesystem,
+so a reader or a crash sees the old file or the new one, never half of one).
+Writes from a single instance are chained, so two concurrent callers in the same
+process cannot both read and then both write. `add`, `update`, and `remove` all
+run through it.
+
+**Reads no longer go stale.** `AnnotationStore.reload()` is new and additive, and
+[server.ts](../../packages/mcp-server/src/server.ts) calls it before serving
+`get_annotations`. Previously the server loaded once at startup, so an agent
+connected before the human started annotating was told "No annotations for this
+location" indefinitely.
+
+Both fixes are pinned by tests that were checked against the unfixed code, not
+just written after: removing the re-read fails the two core cases, and removing
+the `reload()` fails the server case.
+
+**Known residual race**, stated rather than hidden: two *processes* can still
+read before either renames. The window went from an entire session to
+microseconds; closing it fully needs a lock file, deliberately not taken yet.
+
+**Known cost**: a write now costs a read as well — measured at 3.2 ms per heal in
+a 1,000-note workspace, up from 2.3 ms. That path disappears with the
+immutable-capture change (heals stop being persisted at all), which is why it is
+not being optimised here.
+
+**Still stale**: the extension's own copy. It reads `all()` per render, so notes
+an agent writes over MCP don't appear until something else reloads. The fix is a
+file watcher, which belongs with the shard migration in
+[standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md).
+
 ## 2026-08-16 — Storage layout and lifecycle decided; a two-writer data loss found
 
 Recorded in

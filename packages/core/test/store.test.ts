@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -153,6 +153,78 @@ describe("AnnotationStore", () => {
     const second = new AnnotationStore(storePath);
     await second.load();
     expect(second.get(saved.id)?.body).toBe("revised");
+  });
+
+  it("does not let one writer destroy another's annotation", async () => {
+    // The real topology: the extension host and the MCP server are separate
+    // processes over one store file. Each one holding its own copy in memory and
+    // rewriting the file wholesale means the last writer wins and the other's
+    // note is gone — "two writers, one store" has to survive this.
+    const editor = new AnnotationStore(storePath);
+    const server = new AnnotationStore(storePath);
+
+    await editor.load();
+    await editor.add(draft({ provenance: "human", anchor: { file: "src/a.ts", startLine: 1, endLine: 1, snapshot: "a" } }));
+
+    await server.load(); // server starts, sees one annotation
+    await editor.add(draft({ provenance: "human", anchor: { file: "src/b.ts", startLine: 1, endLine: 1, snapshot: "b" } }));
+    await server.add(draft({ provenance: "agent", anchor: { file: "src/c.ts", startLine: 1, endLine: 1, snapshot: "c" } }));
+
+    const verify = new AnnotationStore(storePath);
+    await verify.load();
+    expect(verify.all().map((a) => a.anchor.file).sort()).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+  });
+
+  it("keeps a concurrent addition when the other writer removes something", async () => {
+    const editor = new AnnotationStore(storePath);
+    const server = new AnnotationStore(storePath);
+    await editor.load();
+    const doomed = await editor.add(draft({ anchor: { file: "src/a.ts", startLine: 1, endLine: 1, snapshot: "a" } }));
+
+    await server.load();
+    await server.add(draft({ anchor: { file: "src/new.ts", startLine: 1, endLine: 1, snapshot: "new" } }));
+    await editor.remove(doomed.id); // editor never saw the server's write
+
+    const verify = new AnnotationStore(storePath);
+    await verify.load();
+    expect(verify.all().map((a) => a.anchor.file)).toEqual(["src/new.ts"]);
+  });
+
+  it("serialises concurrent writes from one process", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        store.add(draft({ anchor: { file: `src/${i}.ts`, startLine: 1, endLine: 1, snapshot: `s${i}` } })),
+      ),
+    );
+
+    const verify = new AnnotationStore(storePath);
+    await verify.load();
+    expect(verify.all()).toHaveLength(20);
+  });
+
+  it("reload() picks up another writer's changes", async () => {
+    const reader = new AnnotationStore(storePath);
+    const writer = new AnnotationStore(storePath);
+    await reader.load();
+    await writer.load();
+
+    await writer.add(draft({ anchor: { file: "src/late.ts", startLine: 1, endLine: 1, snapshot: "late" } }));
+    expect(reader.all()).toHaveLength(0); // still the snapshot it loaded
+
+    await reader.reload();
+    expect(reader.all()).toHaveLength(1);
+  });
+
+  it("leaves no temp files beside the store", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const saved = await store.add(draft());
+    await store.update(saved.id, { body: "revised" });
+    await store.remove(saved.id);
+
+    expect(await readdir(dirname(storePath))).toEqual(["annotations.json"]);
   });
 
   it("writes newline-terminated pretty JSON", async () => {
