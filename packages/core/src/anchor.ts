@@ -48,7 +48,9 @@ export async function readRegion(root: string, anchor: Anchor): Promise<string |
 /**
  * Attempt to find a drifted anchor in the current file text.
  * Uses a line-based sliding window, ignoring whitespace, to find the highest matching block.
- * If the best match exceeds a similarity threshold (e.g., 80%), returns an updated Anchor.
+ * The best match must clear two bars: a similarity threshold (80%, or 100% for
+ * snippets under 5 lines), AND a margin over the best match elsewhere in the
+ * file, so a near-identical decoy cannot quietly steal the anchor.
  * Otherwise, returns undefined, meaning the anchor is permanently lost ("degrade loudly").
  */
 export function reanchor(anchor: Anchor, currentFileText: string): Anchor | undefined {
@@ -62,6 +64,7 @@ export function reanchor(anchor: Anchor, currentFileText: string): Anchor | unde
   const normalizeForMatch = (line: string) => line.replace(/\s+/g, "");
   const normalizedOriginal = originalLines.map(normalizeForMatch);
   
+  const scores: number[] = [];
   let bestMatchIndex = -1;
   let bestMatchScore = -1;
 
@@ -73,7 +76,8 @@ export function reanchor(anchor: Anchor, currentFileText: string): Anchor | unde
         currentScore++;
       }
     }
-    
+    scores.push(currentScore);
+
     if (currentScore > bestMatchScore) {
       bestMatchScore = currentScore;
       bestMatchIndex = i;
@@ -81,20 +85,37 @@ export function reanchor(anchor: Anchor, currentFileText: string): Anchor | unde
   }
 
   const similarity = bestMatchScore / windowSize;
-  
+
   // Require at least 80% similarity. For 1-4 line snippets, requires 100%.
   const threshold = windowSize < 5 ? 1.0 : 0.8;
-  if (similarity >= threshold) {
-    const newSnapshotLines = currentLines.slice(bestMatchIndex, bestMatchIndex + windowSize);
-    const newSnapshot = newSnapshotLines.join("\n");
-    return {
-      ...anchor,
-      startLine: bestMatchIndex + 1, // 1-based
-      endLine: bestMatchIndex + windowSize,
-      snapshot: newSnapshot,
-      snapshotHash: fingerprint(newSnapshot)
-    };
-  }
+  if (similarity < threshold) return undefined;
 
-  return undefined;
+  // Winning is not enough — the win has to be DISTINCTIVE. A branch that
+  // carries a near-identical copy of the annotated code (a refactor in
+  // progress, a legacy fork of a function) produces a decoy that outscores the
+  // real, edited original. Attaching the note to it silently would be worse
+  // than no note, so a win by less than a quarter of the snippet over the best
+  // rival elsewhere in the file degrades loudly instead.
+  //
+  // Only DISJOINT rivals count: repeated lines make neighbouring windows score
+  // alike, but those describe the same region, not a different one.
+  const margin = Math.max(1, Math.ceil(windowSize * 0.25));
+  const rivalScore = scores.reduce(
+    (best, score, i) =>
+      i + windowSize <= bestMatchIndex || i >= bestMatchIndex + windowSize
+        ? Math.max(best, score)
+        : best,
+    -1,
+  );
+  if (rivalScore >= 0 && bestMatchScore - rivalScore < margin) return undefined;
+
+  const newSnapshotLines = currentLines.slice(bestMatchIndex, bestMatchIndex + windowSize);
+  const newSnapshot = newSnapshotLines.join("\n");
+  return {
+    ...anchor,
+    startLine: bestMatchIndex + 1, // 1-based
+    endLine: bestMatchIndex + windowSize,
+    snapshot: newSnapshot,
+    snapshotHash: fingerprint(newSnapshot)
+  };
 }
