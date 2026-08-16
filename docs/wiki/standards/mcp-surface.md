@@ -120,6 +120,20 @@ reading is bounded by the same `DEFAULT_SCOPE_LIMIT` an agent gets from
 `get_annotations`. A resource is read on demand rather than on every turn, but
 it lands in the same context window when it is.
 
+### The capability has to be honoured, not just advertised
+
+The SDK advertises `resources.listChanged` as soon as a resource is registered,
+and that entitles a client to list the sets once and then wait to be told. So
+the server now sends `notifications/resources/list_changed` when a write
+actually changes which sets exist — a note creating a set, the last note leaving
+one, a note moved out. Finishing a note sends nothing, because a finished note
+still belongs to its set, and a notification on every write would train a client
+to re-list for no reason.
+
+This covers writes made **through the server**. A set the person creates in the
+editor still arrives late: nothing watches the store yet (Phase 6). Every read
+reloads first, so the answer is never wrong, only later than it could be.
+
 ## 3. Procedures do not live in a skill
 
 A skill is one vendor's format. The product's whole reason to exist is

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ResourceListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AnnotationStore } from "@acciaccatura/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -664,13 +665,22 @@ describe("sets as resources", () => {
     expect(pr?.description ?? "").toMatch(/2 open/);
   });
 
-  it("keeps the slash in a set's name instead of escaping it away", async () => {
+  it("reads back every URI it lists, slashes and all", async () => {
     await seedSet("pr/142", ["a note"]);
+    await seedSet("onboarding/billing", ["another note"]);
+
+    // The round trip is the property, not the spelling. `{scope}` percent-
+    // encodes the slash and then fails to match its own URI back, so every
+    // listed set becomes unreadable — and set names are `kind/name` by
+    // convention, which makes that every set there is. Checking only the
+    // listing would miss it: the listing builds its URIs by hand.
     const { resources } = await client.listResources();
-    // `{scope}` would percent-encode the slash and then fail to match its own
-    // URI back. Set names are `kind/name` by convention, so that is every set.
+    expect(resources.length).toBeGreaterThan(0);
+    for (const resource of resources) {
+      const read = await client.readResource({ uri: resource.uri });
+      expect(String(read.contents[0]?.text ?? ""), `could not read ${resource.uri}`).not.toBe("");
+    }
     expect(resources.map((r) => r.uri)).toContain("acciaccatura://scopes/pr/142");
-    expect(resources.map((r) => r.uri)).not.toContain("acciaccatura://scopes/pr%2F142");
   });
 
   it("reads a set in its author's order, not the order it was written", async () => {
@@ -780,5 +790,105 @@ describe("sets as resources", () => {
       "scope_status",
       "update_annotation",
     ]);
+  });
+});
+
+/**
+ * We advertise `resources.listChanged`, which entitles a client to list the
+ * sets once and then wait to be told. Advertising a capability and never
+ * honouring it leaves that client reading a list that quietly went out of date.
+ */
+describe("telling a client the set list moved", () => {
+  /** Connect a client that records every resource-list-changed notification. */
+  async function connectCounting(): Promise<{ c: Client; count: () => number }> {
+    const store = new AnnotationStore(join(root, ".acciaccatura", "annotations.json"));
+    await store.load();
+    const server = createServer(store, root);
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const c = new Client({ name: "test", version: "0" });
+    let seen = 0;
+    c.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+      seen++;
+    });
+    await c.connect(clientT);
+    return { c, count: () => seen };
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+
+  it("says so when a note creates a set that did not exist", async () => {
+    const { c, count } = await connectCounting();
+    await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/new" },
+    });
+    await settle();
+    expect(count()).toBe(1);
+    await c.close();
+  });
+
+  it("stays quiet for a note that joins a set already there", async () => {
+    const { c, count } = await connectCounting();
+    const add = (body: string) =>
+      c.callTool({
+        name: "annotate_code",
+        arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body, scope: "pr/1" },
+      });
+    await add("first");
+    await settle();
+    const afterFirst = count();
+    await add("second");
+    await settle();
+    // The list did not change, so there is nothing to tell. A notification per
+    // write would train a client to re-list for no reason.
+    expect(count()).toBe(afterFirst);
+    await c.close();
+  });
+
+  it("stays quiet when a note is only marked done", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "resolve_annotation", arguments: { id } });
+    await settle();
+    // A finished note still belongs to its set, so the list is unchanged.
+    expect(count()).toBe(before);
+    await c.close();
+  });
+
+  it("says so when the last note leaves a set", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "remove_annotation", arguments: { id } });
+    await settle();
+    expect(count()).toBe(before + 1);
+    await c.close();
+  });
+
+  it("says so when a note is moved out of its set", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "update_annotation", arguments: { id, scope: null } });
+    await settle();
+    expect(count()).toBe(before + 1);
+    await c.close();
   });
 });

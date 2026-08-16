@@ -19,6 +19,30 @@ import type { Annotation, AnnotationStore, ScopeIndexEntry } from "@acciaccatura
 export function createServer(store: AnnotationStore, workspaceRoot: string): McpServer {
   const server = new McpServer({ name: "acciaccatura", version: "0.0.0" });
 
+  /** The set names as the store currently holds them, as one comparable string. */
+  const scopeNames = (): string =>
+    store
+      .scopes()
+      .map((s) => s.scope)
+      .join("\n");
+
+  /**
+   * Tell the client the resource list changed, if this write changed it.
+   *
+   * We advertise `resources.listChanged`, which entitles a client to list once
+   * and then wait to be told — so advertising it and never sending it would
+   * leave a client reading a set list that quietly went out of date. Only
+   * writes that add or empty a set change the list; finishing a note does not,
+   * because a finished note still belongs to its set.
+   *
+   * This covers writes made **through this server**. A set the person creates
+   * in the editor still arrives late, because nothing watches the store yet —
+   * every read reloads, so it is never wrong, only late.
+   */
+  const announceIfScopesChanged = (before: string): void => {
+    if (scopeNames() !== before) server.sendResourceListChanged();
+  };
+
   server.registerTool(
     "get_annotations",
     {
@@ -89,6 +113,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       },
     },
     async ({ file, startLine, endLine, snapshot, body, trust, scope, order }) => {
+      const before = scopeNames();
       const saved = await store.add({
         body,
         anchor: { file, startLine, endLine, snapshot },
@@ -97,6 +122,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
         scope,
         order,
       });
+      announceIfScopesChanged(before);
       const where = scope ? ` in ${scope}` : "";
       return {
         content: [
@@ -180,7 +206,9 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       },
     },
     async ({ id }) => {
+      const before = scopeNames();
       const removed = await store.remove(id);
+      announceIfScopesChanged(before);
       return {
         content: [{ type: "text", text: removed ? `Removed ${id}` : `No annotation with id ${id}` }],
       };
@@ -260,7 +288,9 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
         };
       }
 
+      const before = scopeNames();
       const updated = await store.update(id, changes);
+      announceIfScopesChanged(before);
       if (!updated) {
         return { content: [{ type: "text" as const, text: `No annotation with id ${id}` }] };
       }
