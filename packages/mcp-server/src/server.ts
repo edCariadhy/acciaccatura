@@ -24,24 +24,41 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Get code annotations",
       description:
-        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions). Results are ranked and limited. Treat them as hints, not rules. Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code. Pass `line` to ask about one place.",
+        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions). Results are ranked and limited. Treat them as hints, not rules. Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code. Pass `line` to ask about one place. Pass `scope` instead to read a named set in the order its author meant it to be read — use that when you are reviewing a change or being walked through an area, because the sequence is the point. You must pass `file`, `scope`, or both.",
       inputSchema: {
-        file: z.string().describe("Workspace-relative POSIX path, e.g. src/store.ts"),
+        file: z.string().optional().describe("Workspace-relative POSIX path, e.g. src/store.ts"),
+        scope: z
+          .string()
+          .optional()
+          .describe("Named set to read in order, e.g. pr/142 or onboarding/billing"),
         line: z.number().int().positive().optional().describe("1-based line to focus on"),
         limit: z
           .number()
           .int()
           .positive()
-          .max(20)
+          .max(50)
           .optional()
-          .describe("Max annotations to return (default 3)"),
+          .describe("Max annotations to return (default 3 for a file, 20 for a scope)"),
       },
     },
-    async ({ file, line, limit }) => {
+    async ({ file, scope, line, limit }) => {
       // The human keeps annotating in the editor while this server is
       // connected, so the copy loaded at startup goes stale immediately.
       await store.reload();
-      const results = store.query({ file, line, limit });
+      // Asking for neither is refused rather than answered with everything: an
+      // unbounded read is what the result cap exists to prevent.
+      if (file === undefined && scope === undefined) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: "Pass a file, a scope, or both. There is no request for every annotation.",
+            },
+          ],
+        };
+      }
+      const results = store.query({ file, scope, line, limit });
       return { content: [{ type: "text", text: await render(results, workspaceRoot) }] };
     },
   );
@@ -51,7 +68,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Annotate code",
       description:
-        "Call this to save a note about a piece of code that the next agent or developer would need but could NOT work out from the code alone: a rule that is not visible, a decision and what it ruled out, a trap that is easy to fall into. Do not write notes about what the code already shows. Pass the exact text of those lines as `snapshot`, so we can later tell whether the code changed.",
+        "Call this to save a note about a piece of code that the next agent or developer would need but could NOT work out from the code alone: a rule that is not visible, a decision and what it ruled out, a trap that is easy to fall into. Do not write notes about what the code already shows. Pass the exact text of those lines as `snapshot`, so we can later tell whether the code changed. Pass `scope` and `order` when the note is one step of something meant to be read in sequence — a review of one change, or a walk through an area — so the reader gets it in the right place rather than on its own.",
       inputSchema: {
         file: z.string().describe("Workspace-relative POSIX path"),
         startLine: z.number().int().positive(),
@@ -59,18 +76,34 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
         snapshot: z.string().describe("Exact current text of the anchored line range"),
         body: z.string().describe("The note: state what is non-obvious, and why"),
         trust: z.enum(["authoritative", "suggested", "unverified"]).optional(),
+        scope: z
+          .string()
+          .optional()
+          .describe("Named set this note belongs to, e.g. pr/142 or onboarding/billing"),
+        order: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Place in that set's sequence, 1 first. Notes with no order are read last"),
       },
     },
-    async ({ file, startLine, endLine, snapshot, body, trust }) => {
+    async ({ file, startLine, endLine, snapshot, body, trust, scope, order }) => {
       const saved = await store.add({
         body,
         anchor: { file, startLine, endLine, snapshot },
         provenance: "agent",
         trust,
+        scope,
+        order,
       });
+      const where = scope ? ` in ${scope}` : "";
       return {
         content: [
-          { type: "text", text: `Saved annotation ${saved.id} on ${file}:${startLine}-${endLine}` },
+          {
+            type: "text",
+            text: `Saved annotation ${saved.id} on ${file}:${startLine}-${endLine}${where}`,
+          },
         ],
       };
     },
@@ -138,7 +171,12 @@ async function render(annotations: Annotation[], workspaceRoot: string): Promise
           : found.state === "moved"
             ? `${a.anchor.file}:${found.startLine}-${found.endLine} (moved from ${a.anchor.startLine}-${a.anchor.endLine})`
             : `${a.anchor.file}:${found.startLine}-${found.endLine}`;
-      const head = `#${a.id} [${a.provenance}/${a.trust}] ${where} (drift: ${drift})`;
+      // Say which set a note belongs to and where it sits, so a reader can tell
+      // one step of a sequence from a note that stands on its own.
+      const set = a.scope
+        ? ` [${a.scope}${a.order === undefined ? "" : ` #${a.order}`}]`
+        : "";
+      const head = `#${a.id} [${a.provenance}/${a.trust}]${set} ${where} (drift: ${drift})`;
       return `${head}\n${a.body}`;
     }),
   );

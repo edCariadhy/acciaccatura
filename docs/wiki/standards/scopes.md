@@ -32,6 +32,21 @@ stays put.
 Scope names carry a `kind/name` shape by convention, not by rule. The store does
 not parse them.
 
+### Two bounds, because the two reads differ
+
+A file read stays at three. A set read defaults to **twenty**.
+
+Three is right for a file, where notes collect by accident and the caller wants
+the few that matter. A set is the opposite: someone sat down and chose what goes
+in it and in what order, so its size is already a decision, and a twelve-note
+tour cut to three is not a tour.
+
+It stays bounded either way. There is no "read the whole set", because a set
+somebody let grow to five hundred would flood a context window just as surely as
+a file dump. For the same reason a read must name a file or a scope — asking for
+neither is an error, not a request for everything, since an unbounded path
+reachable by leaving out an argument would be found by accident.
+
 ## 2. Two kinds of scope, two lifetimes
 
 | | ephemeral | standing |

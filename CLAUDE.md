@@ -154,7 +154,9 @@ implementer must respect. Flag it explicitly when a change violates one.
 The code already encodes several of these; keep them enforced as it grows.
 
 - *Bounded context* → `AnnotationStore.query` in [store.ts](packages/core/src/store.ts)
-  ranks and caps results (`DEFAULT_LIMIT = 3`). Never add an unbounded query path for agents;
+  ranks and caps results (`DEFAULT_LIMIT = 3`, and `DEFAULT_SCOPE_LIMIT = 20` when reading a
+  named set, which someone authored deliberately). A query naming neither a file nor a scope
+  throws rather than returning everything. Never add an unbounded query path for agents;
   `all()` is for tooling/tests only.
 - *Anchoring / degrade loudly* → [anchor.ts](packages/core/src/anchor.ts) captures a
   `snapshot` + `snapshotHash` on write and `driftStatus` returns `aligned | drifted | unknown`

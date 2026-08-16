@@ -12,17 +12,41 @@ import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel } from "
  */
 export const DEFAULT_LIMIT = 3;
 
+/**
+ * Default bound for a read of one named set. Higher than {@link DEFAULT_LIMIT}
+ * on purpose: the notes on a file are an incidental pile, so three is the right
+ * answer there, but a set is something an author sat down and built, and its
+ * size is their decision. A twelve-note tour cut to three is not a tour.
+ *
+ * Still bounded, though. "Read the whole set" is not a path we offer, because a
+ * set someone let grow to five hundred would flood a context window just as
+ * surely.
+ */
+export const DEFAULT_SCOPE_LIMIT = 20;
+
 interface StoreFile {
   version: 1;
   annotations: Annotation[];
 }
 
+/**
+ * What to look up. At least one of `file` or `scope` is required — see
+ * {@link AnnotationStore.query} for why there is no "everything" path.
+ */
 export interface QueryOptions {
   /** Workspace-relative POSIX path to look up. */
-  file: string;
-  /** Optional 1-based line to focus ranking around. */
+  file?: string;
+  /**
+   * Named set to read, in its own sequence. Combine with `file` to narrow a set
+   * to one file. See {@link Annotation.scope}.
+   */
+  scope?: string;
+  /** Optional 1-based line to focus ranking around. Ignored for a set read. */
   line?: number;
-  /** Max results; defaults to {@link DEFAULT_LIMIT}. */
+  /**
+   * Max results; defaults to {@link DEFAULT_LIMIT} for a file, and to
+   * {@link DEFAULT_SCOPE_LIMIT} when a `scope` is named.
+   */
   limit?: number;
   /**
    * Include notes whose work is finished. Off by default: a finished note has
@@ -110,6 +134,8 @@ export class AnnotationStore {
       // until a human confirms them.
       trust: input.trust ?? (input.provenance === "human" ? "authoritative" : "suggested"),
       author: input.author,
+      scope: input.scope,
+      order: input.order,
       createdAt: now,
       updatedAt: now,
     };
@@ -230,20 +256,46 @@ export class AnnotationStore {
   }
 
   /**
-   * Bounded, ranked lookup for one file. An exact line overlap outranks
-   * proximity; ties break toward the most recently updated note. Results are
-   * capped at `limit` so callers cannot accidentally flood a context window.
+   * Bounded lookup, by file, by named set, or by both.
+   *
+   * The two reads answer different questions, so they order differently. A file
+   * lookup ranks: an exact line overlap outranks proximity, and ties break
+   * toward the most recently updated note. A set is read in the sequence its
+   * author gave it, because "review the migration before the handler" is the
+   * information the set exists to carry, and ranking would throw it away.
+   *
+   * Naming neither a file nor a set is an error rather than "everything". An
+   * unbounded path is exactly what the result cap exists to prevent, and one
+   * that appears by leaving an argument out would be found by accident.
    */
-  query({ file, line, limit = DEFAULT_LIMIT, includeResolved = false }: QueryOptions): Annotation[] {
+  query(options: QueryOptions): Annotation[] {
     this.#ensureLoaded();
-    return this.#data.annotations
-      // Both filters run before the cap: dropping finished notes afterwards
-      // would spend the caller's few slots on notes it never returns.
-      .filter((a) => a.anchor.file === file && (includeResolved || !a.resolvedAt))
-      .map((a) => ({ a, s: relevance(a, line) }))
-      .sort((x, y) => y.s - x.s || byUpdatedDesc(x.a, y.a))
-      .slice(0, Math.max(0, limit))
-      .map((r) => r.a);
+    const { file, scope, line, includeResolved = false } = options;
+    if (file === undefined && scope === undefined) {
+      throw new Error("AnnotationStore.query needs a file or a scope: there is no query for every note.");
+    }
+
+    const bySet = scope !== undefined;
+    const limit = options.limit ?? (bySet ? DEFAULT_SCOPE_LIMIT : DEFAULT_LIMIT);
+
+    // Every filter runs before the cap: dropping notes afterwards would spend
+    // the caller's few slots on notes it never returns.
+    const matches = this.#data.annotations.filter(
+      (a) =>
+        (file === undefined || a.anchor.file === file) &&
+        (scope === undefined || a.scope === scope) &&
+        (includeResolved || !a.resolvedAt),
+    );
+
+    // `matches` is filter's own array, so sorting it in place is safe.
+    const ordered = bySet
+      ? matches.sort(bySequence)
+      : matches
+          .map((a) => ({ a, s: relevance(a, line) }))
+          .sort((x, y) => y.s - x.s || byUpdatedDesc(x.a, y.a))
+          .map((r) => r.a);
+
+    return ordered.slice(0, Math.max(0, limit));
   }
 
   /** Every annotation, unranked and unbounded. For tooling/tests, not agents. */
@@ -335,4 +387,16 @@ function relevance(a: Annotation, line: number | undefined): number {
 
 function byUpdatedDesc(a: Annotation, b: Annotation): number {
   return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0;
+}
+
+/**
+ * A set's own sequence: `order` ascending, then oldest first so the run stays
+ * put. Notes with no `order` sort last rather than first — the author gave them
+ * no place, and a note nobody sequenced should not open the tour.
+ */
+function bySequence(a: Annotation, b: Annotation): number {
+  const left = a.order ?? Number.POSITIVE_INFINITY;
+  const right = b.order ?? Number.POSITIVE_INFINITY;
+  if (left !== right) return left - right;
+  return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
 }
