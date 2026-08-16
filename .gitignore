@@ -14,5 +14,8 @@ coverage/
 !.vscode/tasks.json
 !.vscode/extensions.json
 
-# Local annotation store written into a workspace by the extension / server
+# Stores our own dev builds write into this workspace while testing. This is a
+# development artefact, NOT the product's default: Acciaccatura ships no
+# .gitignore, so in a user's repository .acciaccatura/ is committed unless they
+# choose otherwise. See docs/wiki/standards/storage-and-lifecycle.md.
 .acciaccatura/
