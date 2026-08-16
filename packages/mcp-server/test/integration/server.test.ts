@@ -62,6 +62,7 @@ describe("MCP server integration", () => {
       "remove_annotation",
       "resolve_annotation",
       "scope_status",
+      "update_annotation",
     ]);
     // The description must say WHEN to call the tool, not only what it does.
     const get = tools.find((t) => t.name === "get_annotations");
@@ -421,6 +422,118 @@ describe("MCP server integration", () => {
       expect(status?.description ?? "").toMatch(/before|when/i);
       // Counts, never a score: the description must not promise a verdict.
       expect(status?.description ?? "").not.toMatch(/staleness score|score/i);
+    });
+
+    it("closes the loop: a drifted set is repaired and reads aligned again", async () => {
+      await addTo("onboarding/billing", 1, "the tour step");
+      const editor = await editorStore();
+      const id = editor.all()[0]!.id;
+
+      // Push the anchored line down the file. The note now points at the wrong
+      // place, which scope_status reports and nothing yet can fix.
+      const moved = "// added\n// added\nexport function add(a, b) {\n  return a + b;\n}\n";
+      await writeFile(join(root, "src", "math.ts"), moved, "utf8");
+
+      const before = await client.callTool({
+        name: "scope_status",
+        arguments: { scope: "onboarding/billing" },
+      });
+      expect(textOf(before as never)).toMatch(/1 drifted/);
+
+      // Repair it: a fresh capture of where the code sits now.
+      const fixed = await client.callTool({
+        name: "update_annotation",
+        arguments: {
+          id,
+          file: "src/math.ts",
+          startLine: 4,
+          endLine: 4,
+          snapshot: "  return a + b;",
+        },
+      });
+      expect((fixed as { isError?: boolean }).isError).toBeFalsy();
+
+      const after = await client.callTool({
+        name: "scope_status",
+        arguments: { scope: "onboarding/billing" },
+      });
+      expect(textOf(after as never)).toMatch(/1 aligned/);
+      expect(textOf(after as never)).toMatch(/0 drifted/);
+    });
+
+    it("keeps the note's id through a repair, so a cached id still works", async () => {
+      await addTo("pr/142", 1, "before");
+      const editor = await editorStore();
+      const id = editor.all()[0]!.id;
+
+      await client.callTool({
+        name: "update_annotation",
+        arguments: { id, body: "after" },
+      });
+
+      await editor.reload();
+      expect(editor.all()).toHaveLength(1);
+      expect(editor.get(id)?.body).toBe("after");
+    });
+
+    it("re-sequences a tour without rewriting it", async () => {
+      await addTo("onboarding/billing", 1, "was first");
+      await addTo("onboarding/billing", 2, "was second");
+      const editor = await editorStore();
+      const firstId = editor.all().find((a) => a.body === "was first")!.id;
+
+      await client.callTool({
+        name: "update_annotation",
+        arguments: { id: firstId, order: 3 },
+      });
+
+      const got = await client.callTool({
+        name: "get_annotations",
+        arguments: { scope: "onboarding/billing" },
+      });
+      const text = textOf(got as never);
+      expect(text.indexOf("was second")).toBeLessThan(text.indexOf("was first"));
+    });
+
+    it("says so plainly when the id is not one of ours", async () => {
+      const bad = await client.callTool({
+        name: "update_annotation",
+        arguments: { id: "not-an-id", body: "x" },
+      });
+      expect(textOf(bad as never)).toMatch(/no annotation with id/i);
+    });
+
+    it("refuses a repair that changes nothing", async () => {
+      await addTo("pr/142", 1, "a note");
+      const editor = await editorStore();
+      const id = editor.all()[0]!.id;
+
+      // A call with only an id would silently bump updatedAt and say it worked.
+      const bad = await client.callTool({ name: "update_annotation", arguments: { id } });
+      expect((bad as { isError?: boolean }).isError).toBe(true);
+    });
+
+    it("refuses half an anchor, rather than anchoring at a guess", async () => {
+      await addTo("pr/142", 1, "a note");
+      const editor = await editorStore();
+      const id = editor.all()[0]!.id;
+
+      // Line numbers without the text they point at cannot be hashed, and a
+      // note anchored on a guess is the failure this product exists to avoid.
+      const bad = await client.callTool({
+        name: "update_annotation",
+        arguments: { id, startLine: 4, endLine: 4 },
+      });
+      expect((bad as { isError?: boolean }).isError).toBe(true);
+    });
+
+    it("tells an agent to re-read the code before repairing an anchor", async () => {
+      const { tools } = await client.listTools();
+      const update = tools.find((t) => t.name === "update_annotation");
+      expect(update?.description ?? "").toMatch(/snapshot/i);
+      // Repair keeps identity; the description has to say so, or an agent will
+      // reach for remove + annotate and lose the note's place in its set.
+      expect(update?.description ?? "").toMatch(/id|same note/i);
     });
 
     it("says when to reach for a set, not only that sets exist", async () => {

@@ -188,6 +188,94 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
   );
 
   server.registerTool(
+    "update_annotation",
+    {
+      title: "Repair an annotation",
+      description:
+        "Call this to fix a note that is still worth keeping: its wording is wrong or out of date, or scope_status says it has 'drifted' and you have found where its code went. Use this rather than remove_annotation + annotate_code — this keeps the same note, so its id and its place in its set survive, and anything holding that id still works. To re-point it, read the code as it is NOW and pass `file`, `startLine`, `endLine` and `snapshot` together: the snapshot must be the current text of those lines, because drift is measured against it. Pass `scope` and `order` to move a note within a set or to another one; pass null for either to take it out. Do not use this to mark work finished — that is resolve_annotation.",
+      inputSchema: {
+        id: z.string().describe("Annotation id from get_annotations"),
+        body: z.string().optional().describe("Replacement note text"),
+        file: z.string().optional().describe("Workspace-relative POSIX path; part of a re-anchor"),
+        startLine: z.number().int().positive().optional(),
+        endLine: z.number().int().positive().optional(),
+        snapshot: z
+          .string()
+          .optional()
+          .describe("Exact CURRENT text of the new line range; required to re-anchor"),
+        trust: z.enum(["authoritative", "suggested", "unverified"]).optional(),
+        scope: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Move to this set, or null to take the note out of every set"),
+        order: z
+          .number()
+          .int()
+          .positive()
+          .nullable()
+          .optional()
+          .describe("New place in the set's sequence, or null for none"),
+      },
+    },
+    async ({ id, body, file, startLine, endLine, snapshot, trust, scope, order }) => {
+      const anchorParts = [file, startLine, endLine, snapshot];
+      const givenParts = anchorParts.filter((p) => p !== undefined).length;
+      // All four or none. Line numbers without their text cannot be hashed, and
+      // a note re-anchored on a guess is exactly the silent wrong answer this
+      // product exists to avoid.
+      if (givenParts > 0 && givenParts < 4) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: "To re-anchor, pass file, startLine, endLine and snapshot together. The snapshot must be the current text of those lines.",
+            },
+          ],
+        };
+      }
+
+      const changes = {
+        ...(body === undefined ? {} : { body }),
+        ...(trust === undefined ? {} : { trust }),
+        ...(scope === undefined ? {} : { scope }),
+        ...(order === undefined ? {} : { order }),
+        ...(givenParts === 4
+          ? { anchor: { file: file!, startLine: startLine!, endLine: endLine!, snapshot: snapshot! } }
+          : {}),
+      };
+
+      // A call that changes nothing would still bump updatedAt and report
+      // success, which reads as a repair that happened.
+      if (Object.keys(changes).length === 0) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: "Nothing to change. Pass a body, a trust level, a scope, an order, or a full anchor.",
+            },
+          ],
+        };
+      }
+
+      const updated = await store.update(id, changes);
+      if (!updated) {
+        return { content: [{ type: "text" as const, text: `No annotation with id ${id}` }] };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Updated ${updated.id} on ${updated.anchor.file}:${updated.anchor.startLine}-${updated.anchor.endLine}`,
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
     "scope_status",
     {
       title: "Check a set of notes",

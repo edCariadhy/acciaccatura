@@ -79,6 +79,14 @@ export interface AnnotationUpdate {
   anchor?: Omit<Anchor, "snapshotHash">;
   trust?: TrustLevel;
   author?: string;
+  /**
+   * Move the note to another set, or pass `null` to take it out of every set.
+   * Omit to leave the set as it is — the three cases are different, which is
+   * why this is not just an optional string.
+   */
+  scope?: string | null;
+  /** New place in the sequence, or `null` to give it none. Omit to leave it. */
+  order?: number | null;
 }
 
 /**
@@ -172,6 +180,19 @@ export class AnnotationStore {
         author: changes.author ?? existing.author,
         updatedAt: new Date().toISOString(),
       };
+
+      // Three cases, not two: absent leaves the set alone, a name moves the
+      // note, and null takes it out. Dropped rather than blanked, because an
+      // absent field is what "in no set" means once it is read back from JSON.
+      if (changes.scope !== undefined) {
+        if (changes.scope === null) delete updated.scope;
+        else updated.scope = changes.scope;
+      }
+      if (changes.order !== undefined) {
+        if (changes.order === null) delete updated.order;
+        else updated.order = changes.order;
+      }
+
       annotations[index] = updated;
       return updated;
     });

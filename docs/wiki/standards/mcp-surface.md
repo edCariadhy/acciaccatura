@@ -44,8 +44,14 @@ Two genuinely new verbs survive that test:
 - **`update_annotation(id, …)`** — repair a note's body or re-point its anchor,
   keeping its id. Nothing else can express it. Removing and re-adding reissues
   the id and drops the note's place in its scope, which is why "the tour needs
-  updating" is currently impossible to say. The core already does this correctly;
-  it has simply never been exposed. **Not built yet.**
+  updating" is currently impossible to say. **Built.** A re-anchor takes all four
+  of `file`, `startLine`, `endLine` and `snapshot` or none: line numbers without
+  the text they point at cannot be hashed, and a note re-anchored on a guess is
+  the silent wrong answer the product exists to avoid. This is a *deliberate*
+  re-anchor by a caller who has read the code, which is not the automatic
+  rewriting that [storage-and-lifecycle.md](storage-and-lifecycle.md) §4 rules
+  out. A call that would change nothing is refused rather than reported as a
+  repair.
 - **`scope_status(scope?)`** — how a set stands: counts of notes, and of open
   notes that are aligned, drifted, or gone. **Built.** It is a tool rather than a
   resource because it is a read that must *compute* — the code has to be
