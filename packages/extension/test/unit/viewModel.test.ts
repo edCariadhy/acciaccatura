@@ -1,0 +1,180 @@
+import type { Annotation, NoteLines } from "@acciaccatura/core";
+import { describe, expect, it } from "vitest";
+
+import { filesWithNotes, gutterMarks, noteView, notesForFile } from "../../src/viewModel.js";
+
+/**
+ * What the editor shows, decided without the editor.
+ *
+ * The sidebar and the gutter were 235 lines of `vscode` calls with the
+ * decisions buried inside them, so nothing about what a reader actually sees
+ * could be tested. These are those decisions, pulled out: which label, which
+ * icon, what order, and which notes appear at all.
+ */
+
+const SAME: NoteLines = { state: "same", startLine: 10, endLine: 12 };
+const MOVED: NoteLines = { state: "moved", startLine: 40, endLine: 42 };
+const GONE: NoteLines = { state: "gone" };
+
+let counter = 0;
+
+function note(over: Partial<Annotation> = {}): Annotation {
+  counter++;
+  return {
+    id: `id-${counter}`,
+    body: "why this exists",
+    anchor: {
+      file: "src/pay.ts",
+      startLine: 10,
+      endLine: 12,
+      snapshot: "  return a * 2;",
+      snapshotHash: "0".repeat(64),
+    },
+    provenance: "human",
+    trust: "authoritative",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("how one note reads in the sidebar", () => {
+  it("labels the note with its first line, so a long note still fits", () => {
+    const view = noteView(note({ body: "the short point\nand the long reasoning after it" }), SAME);
+    expect(view.label).toBe("the short point");
+  });
+
+  it("falls back to a name rather than showing an empty row", () => {
+    expect(noteView(note({ body: "" }), SAME).label).toBe("Annotation");
+  });
+
+  it("shows where the code is now", () => {
+    expect(noteView(note(), SAME).description).toBe("L10-L12");
+  });
+
+  it("says a note moved, so the saved lines are not mistaken for the current ones", () => {
+    expect(noteView(note(), MOVED).description).toBe("L40-L42 (moved)");
+  });
+
+  it("says the code is missing rather than pointing at a line that is now something else", () => {
+    const view = noteView(note(), GONE);
+    expect(view.description).toBe("code not found");
+    expect(view.tooltip).toMatch(/can't find the code/i);
+    // The tooltip has to name the lines it was written for, or there is nothing
+    // to go on when looking for where the code went.
+    expect(view.tooltip).toMatch(/10.*12/);
+  });
+
+  it("marks a finished note as done without hiding where it sits", () => {
+    const view = noteView(note({ resolvedAt: "2026-02-01T00:00:00.000Z", resolvedBy: "agent" }), SAME);
+    expect(view.description).toBe("L10-L12 · done");
+    // Who finished it matters: an agent closing a person's note is worth seeing.
+    expect(view.tooltip).toMatch(/agent/);
+  });
+
+  it("gives the menus something to key off, per kind of note", () => {
+    expect(noteView(note({ trust: "suggested" }), SAME).contextValue).toBe("suggested");
+    expect(noteView(note({ trust: "authoritative" }), SAME).contextValue).toBe("authoritative");
+    expect(noteView(note({ resolvedAt: "2026-02-01T00:00:00.000Z" }), SAME).contextValue).toBe("resolved");
+  });
+
+  it("picks the icon by what the reader most needs to know", () => {
+    expect(noteView(note(), SAME).icon).toBe("comment");
+    expect(noteView(note({ trust: "suggested" }), SAME).icon).toBe("lightbulb");
+    expect(noteView(note(), GONE).icon).toBe("warning");
+    // Finished wins over missing: a note whose work is done is not a problem to
+    // fix, even when its code has gone.
+    expect(noteView(note({ resolvedAt: "2026-02-01T00:00:00.000Z" }), GONE).icon).toBe("check");
+  });
+
+  it("opens the file at where the code is now, not where it was written", () => {
+    expect(noteView(note(), MOVED).reveal).toEqual({ startLine: 40, endLine: 42 });
+  });
+
+  it("offers nowhere to jump when the code is gone", () => {
+    // Revealing the saved lines would send the reader to whatever took that
+    // place, which is the silent wrong answer this product exists to avoid.
+    expect(noteView(note(), GONE).reveal).toBeUndefined();
+  });
+});
+
+describe("how the sidebar is grouped", () => {
+  it("lists each file that has notes, once", () => {
+    const notes = [
+      note({ anchor: { ...note().anchor, file: "src/a.ts" } }),
+      note({ anchor: { ...note().anchor, file: "src/b.ts" } }),
+      note({ anchor: { ...note().anchor, file: "src/a.ts" } }),
+    ];
+    expect(filesWithNotes(notes)).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("has no files to show when there are no notes", () => {
+    expect(filesWithNotes([])).toEqual([]);
+  });
+
+  it("puts the notes still open before the finished ones", () => {
+    const done = note({ body: "done", resolvedAt: "2026-02-01T00:00:00.000Z" });
+    const open = note({ body: "open" });
+    const forFile = notesForFile([done, open], "src/pay.ts");
+    expect(forFile.map((a) => a.body)).toEqual(["open", "done"]);
+  });
+
+  it("keeps finished notes in the list, because they can still be reopened", () => {
+    const done = note({ resolvedAt: "2026-02-01T00:00:00.000Z" });
+    expect(notesForFile([done], "src/pay.ts")).toHaveLength(1);
+  });
+
+  it("does not mix in notes from another file", () => {
+    const other = note({ anchor: { ...note().anchor, file: "src/other.ts" } });
+    expect(notesForFile([note(), other], "src/pay.ts")).toHaveLength(1);
+  });
+});
+
+describe("what the gutter draws", () => {
+  const TEXT = "line one\nline two\n  return a * 2;\nline four\n";
+
+  it("marks the note where its code sits now", () => {
+    const marks = gutterMarks([note({ anchor: { ...note().anchor, startLine: 3, endLine: 3 } })], "src/pay.ts", TEXT);
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toMatchObject({ kind: "note", startLine: 3, endLine: 3 });
+  });
+
+  it("keeps a finished note out of the gutter, so the code stays clear", () => {
+    const done = note({
+      anchor: { ...note().anchor, startLine: 3, endLine: 3 },
+      resolvedAt: "2026-02-01T00:00:00.000Z",
+    });
+    expect(gutterMarks([done], "src/pay.ts", TEXT)).toEqual([]);
+  });
+
+  it("ignores notes belonging to another file", () => {
+    const other = note({ anchor: { ...note().anchor, file: "src/other.ts", startLine: 3, endLine: 3 } });
+    expect(gutterMarks([other], "src/pay.ts", TEXT)).toEqual([]);
+  });
+
+  it("warns in the open when a note's code cannot be found", () => {
+    const lost = note({ anchor: { ...note().anchor, snapshot: "nothing like this", startLine: 3, endLine: 3 } });
+    const marks = gutterMarks([lost], "src/pay.ts", "a\nb\nc\n");
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.kind).toBe("missing");
+  });
+
+  it("says in the hover when the code moved, and where from", () => {
+    // Written against line 3; the code now sits further down.
+    const moved = note({ anchor: { ...note().anchor, startLine: 3, endLine: 3 } });
+    const shifted = "new\nnew\nnew\nnew\n  return a * 2;\n";
+    const marks = gutterMarks([moved], "src/pay.ts", shifted);
+    expect(marks[0]).toMatchObject({ kind: "note", startLine: 5, endLine: 5 });
+    expect(marks[0]?.hover).toMatch(/moved/i);
+    expect(marks[0]?.hover).toMatch(/3/);
+  });
+
+  it("puts how far to trust a note in the hover", () => {
+    const marks = gutterMarks(
+      [note({ trust: "suggested", anchor: { ...note().anchor, startLine: 3, endLine: 3 } })],
+      "src/pay.ts",
+      TEXT,
+    );
+    expect(marks[0]?.hover).toMatch(/suggested/);
+  });
+});
