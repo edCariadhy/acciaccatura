@@ -15,8 +15,8 @@ surface may change once published.
 
 ## 1. Three primitives, three jobs
 
-MCP offers **tools**, **resources**, and **prompts**. We ship only tools today,
-which is why every new idea has looked like a new tool. It should not.
+MCP offers **tools**, **resources**, and **prompts**. Tools came first, which is
+why every new idea looked like a new tool for a while. It should not.
 
 | primitive | holds | why |
 |---|---|---|
@@ -83,6 +83,42 @@ work that has already moved on — which is the kind of thing that changes how
 much weight an agent gives it. No new tool, no new argument, a few tokens on a
 line already being paid for. The full report belongs to the person about to
 sweep, and lives in the editor.
+
+## 2a. The sets are resources — built
+
+Two of them, both `text/plain`:
+
+| URI | is |
+|---|---|
+| `acciaccatura://scopes` | the index: every set, what it holds, how old it is |
+| `acciaccatura://scopes/{+scope}` | one set, its open notes in the author's order |
+
+The template's `list` callback enumerates every set, so `resources/list` answers
+"what is here" with no tool call spent and no line added to the tool list. That
+is the whole point: a tool is paid for on every turn whether or not it is used,
+and a resource is fetched only when wanted.
+
+Three things this design had to get right:
+
+- **`{+scope}`, not `{scope}`.** Set names are `kind/name` by convention, and
+  RFC 6570's plain expansion percent-encodes the slash and then fails to match
+  its own URI back. The reserved expansion carries it through. A client that
+  encodes anyway still gets its set: the read tries the name as given first, so
+  a name genuinely containing a percent escape is not broken by the fallback.
+- **A resource states no position as current.** It reads no code, so it cannot
+  know whether a note's lines still hold. It says "written at 12-18" and points
+  at `get_annotations` for where the code is now and whether it drifted. A
+  position given without that caveat is the quiet wrong answer the product
+  exists to avoid — the same reason drift is a tool and not a resource.
+- **Absent is not empty, and finished is not empty.** A set that does not exist
+  is an error, not a blank document. A set whose notes are all finished says so,
+  because "the work this set was for is over" and "nobody ever wrote into it"
+  are different facts.
+
+Finished notes are left out of the reading but counted in the header, and the
+reading is bounded by the same `DEFAULT_SCOPE_LIMIT` an agent gets from
+`get_annotations`. A resource is read on demand rather than on every turn, but
+it lands in the same context window when it is.
 
 ## 3. Procedures do not live in a skill
 
