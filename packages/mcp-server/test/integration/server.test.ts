@@ -325,12 +325,16 @@ describe("MCP server integration", () => {
     });
 
     it("says plainly when a set had nothing left to close", async () => {
+      // The set name must not contain any word the assertion looks for, or a
+      // reply that echoes the name passes without saying anything true.
       const closed = await client.callTool({
         name: "resolve_annotation",
-        arguments: { scope: "pr/nothing-here" },
+        arguments: { scope: "pr/777" },
       });
       expect((closed as { isError?: boolean }).isError).toBeFalsy();
-      expect(textOf(closed as never)).toMatch(/no open notes|nothing/i);
+      expect(textOf(closed as never)).toMatch(/no open notes/i);
+      // An empty set must not be reported as work done.
+      expect(textOf(closed as never)).not.toMatch(/^Closed/);
     });
 
     it("refuses a finish that names neither a note nor a set", async () => {
