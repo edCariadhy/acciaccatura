@@ -54,6 +54,18 @@ export interface Annotation {
   createdAt: string;
   /** ISO-8601. */
   updatedAt: string;
+  /**
+   * ISO-8601 moment the work this note was about finished. Absent means the
+   * note is still open — including on notes written before this field existed.
+   *
+   * A note is a working note between collaborators, not a permanent record: it
+   * needs an end, or the store only grows and every stale note keeps spending
+   * an agent's context. A finished note stays on disk, out of the way, until
+   * someone sweeps it.
+   */
+  resolvedAt?: string;
+  /** Who decided the work was done. Set together with {@link resolvedAt}. */
+  resolvedBy?: Provenance;
 }
 
 /** Input to {@link AnnotationStore.add}; the store derives id, hash, timestamps. */

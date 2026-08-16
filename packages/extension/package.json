@@ -50,6 +50,22 @@
       {
         "command": "acciaccatura.reviewAnnotation",
         "title": "Promote to Authoritative"
+      },
+      {
+        "command": "acciaccatura.resolveAnnotation",
+        "title": "Mark Done",
+        "category": "Acciaccatura"
+      },
+      {
+        "command": "acciaccatura.reopenAnnotation",
+        "title": "Reopen",
+        "category": "Acciaccatura"
+      },
+      {
+        "command": "acciaccatura.clearFinishedAnnotations",
+        "title": "Delete Finished Notes",
+        "category": "Acciaccatura",
+        "icon": "$(clear-all)"
       }
     ],
     "viewsContainers": {
@@ -70,9 +86,28 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "acciaccatura.deleteAnnotation",
+          "when": "false"
+        },
+        {
+          "command": "acciaccatura.reviewAnnotation",
+          "when": "false"
+        },
+        {
+          "command": "acciaccatura.refreshTree",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "acciaccatura.refreshTree",
+          "when": "view == acciaccatura.annotations",
+          "group": "navigation"
+        },
+        {
+          "command": "acciaccatura.clearFinishedAnnotations",
           "when": "view == acciaccatura.annotations",
           "group": "navigation"
         }
@@ -85,6 +120,14 @@
         {
           "command": "acciaccatura.reviewAnnotation",
           "when": "view == acciaccatura.annotations && viewItem == suggested"
+        },
+        {
+          "command": "acciaccatura.resolveAnnotation",
+          "when": "view == acciaccatura.annotations && viewItem =~ /^(suggested|authoritative)$/"
+        },
+        {
+          "command": "acciaccatura.reopenAnnotation",
+          "when": "view == acciaccatura.annotations && viewItem == resolved"
         }
       ]
     }

@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
-import type { Anchor, Annotation, NewAnnotation, TrustLevel } from "./types.js";
+import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel } from "./types.js";
 
 /**
  * Default query bound. Context is the scarce resource: every annotation handed
@@ -24,6 +24,22 @@ export interface QueryOptions {
   line?: number;
   /** Max results; defaults to {@link DEFAULT_LIMIT}. */
   limit?: number;
+  /**
+   * Include notes whose work is finished. Off by default: a finished note has
+   * nothing left to tell an agent, and every note returned costs context on
+   * every later turn. Turn it on for review UIs and history.
+   */
+  includeResolved?: boolean;
+}
+
+/** How far back {@link AnnotationStore.sweepResolved} clears finished notes. */
+export interface SweepOptions {
+  /**
+   * Delete notes finished at or before this moment. The boundary includes the
+   * moment itself, so "everything finished so far" is `new Date()` and does not
+   * quietly spare a note finished in the same millisecond.
+   */
+  resolvedBefore: Date;
 }
 
 /**
@@ -70,10 +86,17 @@ export class AnnotationStore {
    * Readers that stay alive across writes — the MCP server between tool calls,
    * the editor between renders — need this, because the in-memory copy is a
    * snapshot from whenever it was last read, not a live view.
+   *
+   * This queues behind writes from this instance for the same reason they queue
+   * behind each other: a read that lands in the middle of a write replaces the
+   * list that write is about to save, and the change is lost. Two MCP tool
+   * calls arriving together did exactly that.
    */
   async reload(): Promise<void> {
     this.#ensureLoaded();
-    await this.#readFromDisk();
+    const run = this.#writes.then(() => this.#readFromDisk());
+    this.#writes = run.catch(() => undefined);
+    await run;
   }
 
   async add(input: NewAnnotation): Promise<Annotation> {
@@ -126,6 +149,70 @@ export class AnnotationStore {
     });
   }
 
+  /**
+   * Mark the work this note was about as finished. The note stays on disk and
+   * keeps its id, but drops out of {@link AnnotationStore.query}, so it stops
+   * costing an agent context on every later turn.
+   *
+   * Both writers can decide the work is done, so this is deliberately not an
+   * overwrite: the first answer stands and a second call changes nothing. Use
+   * {@link AnnotationStore.reopen} to undo it, and
+   * {@link AnnotationStore.sweepResolved} to clear finished notes for good.
+   */
+  async resolve(id: string, by: Provenance): Promise<Annotation | undefined> {
+    return this.#mutate((annotations) => {
+      const index = annotations.findIndex((a) => a.id === id);
+      if (index === -1) return undefined;
+
+      const existing = annotations[index]!;
+      if (existing.resolvedAt) return existing;
+
+      const now = new Date().toISOString();
+      const updated: Annotation = { ...existing, resolvedAt: now, resolvedBy: by, updatedAt: now };
+      annotations[index] = updated;
+      return updated;
+    });
+  }
+
+  /** Put a finished note back in play — the work was not done after all. */
+  async reopen(id: string): Promise<Annotation | undefined> {
+    return this.#mutate((annotations) => {
+      const index = annotations.findIndex((a) => a.id === id);
+      if (index === -1) return undefined;
+
+      const updated: Annotation = { ...annotations[index]!, updatedAt: new Date().toISOString() };
+      // Dropped, not blanked: a record with `resolvedAt: undefined` reads back
+      // from JSON as an absent field anyway, and absent is what "open" means.
+      delete updated.resolvedAt;
+      delete updated.resolvedBy;
+      annotations[index] = updated;
+      return updated;
+    });
+  }
+
+  /**
+   * Delete notes finished at or before `resolvedBefore`, and report how many
+   * went. Open notes are never touched, whatever their age — a note the work has
+   * not finished with is not rubbish, however long it has sat there.
+   *
+   * Nothing calls this on a timer. Deleting someone's reasoning is a decision a
+   * person makes, so the cutoff comes from the caller and never from here.
+   */
+  async sweepResolved({ resolvedBefore }: SweepOptions): Promise<number> {
+    const cutoff = resolvedBefore.toISOString();
+    return this.#mutate((annotations) => {
+      let removed = 0;
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        const { resolvedAt } = annotations[i]!;
+        if (resolvedAt && resolvedAt <= cutoff) {
+          annotations.splice(i, 1);
+          removed++;
+        }
+      }
+      return removed;
+    });
+  }
+
   get(id: string): Annotation | undefined {
     this.#ensureLoaded();
     return this.#data.annotations.find((a) => a.id === id);
@@ -147,10 +234,12 @@ export class AnnotationStore {
    * proximity; ties break toward the most recently updated note. Results are
    * capped at `limit` so callers cannot accidentally flood a context window.
    */
-  query({ file, line, limit = DEFAULT_LIMIT }: QueryOptions): Annotation[] {
+  query({ file, line, limit = DEFAULT_LIMIT, includeResolved = false }: QueryOptions): Annotation[] {
     this.#ensureLoaded();
     return this.#data.annotations
-      .filter((a) => a.anchor.file === file)
+      // Both filters run before the cap: dropping finished notes afterwards
+      // would spend the caller's few slots on notes it never returns.
+      .filter((a) => a.anchor.file === file && (includeResolved || !a.resolvedAt))
       .map((a) => ({ a, s: relevance(a, line) }))
       .sort((x, y) => y.s - x.s || byUpdatedDesc(x.a, y.a))
       .slice(0, Math.max(0, limit))

@@ -5,6 +5,8 @@ import { AnnotationStore } from "@acciaccatura/core";
 import type { CapturedSelection } from "@acciaccatura/core";
 
 import { captureAnnotation } from "./capture.js";
+import { clearFinishedNotes, markNoteDone, reopenNote } from "./lifecycle.js";
+import type { LifecycleDeps } from "./lifecycle.js";
 
 import { DecorationManager, initDecorations } from "./decorations.js";
 import { AnnotationTreeProvider, AnnotationTreeItem } from "./treeView.js";
@@ -111,7 +113,64 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
-  context.subscriptions.push(annotate, refreshTree, deleteAnno, reviewAnno);
+  /** Everything the finish-a-note flows need, wired to the real editor. */
+  const lifecycleDeps = (): LifecycleDeps | undefined =>
+    store && {
+      store,
+      chooseNote: async (candidates) => {
+        const picked = await vscode.window.showQuickPick(
+          candidates.map((a) => ({
+            label: a.body.split("\n")[0] ?? "Annotation",
+            description: `${a.anchor.file}:${a.anchor.startLine}-${a.anchor.endLine}`,
+            detail: `written by the ${a.provenance}`,
+            annotation: a,
+          })),
+          { title: "Acciaccatura", placeHolder: "Which note?" },
+        );
+        return picked?.annotation;
+      },
+      confirmDelete: async (count) =>
+        (await vscode.window.showWarningMessage(
+          `Delete ${count} finished note${count === 1 ? "" : "s"}? This cannot be undone.`,
+          { modal: true },
+          "Delete",
+        )) === "Delete",
+      notify: (level, message) =>
+        level === "info"
+          ? void vscode.window.showInformationMessage(`Acciaccatura: ${message}`)
+          : void vscode.window.showWarningMessage(`Acciaccatura: ${message}`),
+    };
+
+  /** Redraw after any change: the sidebar and the gutter both show finished state. */
+  const redraw = async (): Promise<void> => {
+    treeProvider?.refresh();
+    await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
+  };
+
+  // The sidebar passes the note it was invoked on; from the command palette
+  // there is no item, and the flow asks which note instead.
+  const resolveAnno = vscode.commands.registerCommand("acciaccatura.resolveAnnotation", async (item?: AnnotationTreeItem) => {
+    const deps = lifecycleDeps();
+    if (!deps) return;
+    await markNoteDone(deps, item?.annotation);
+    await redraw();
+  });
+
+  const reopenAnno = vscode.commands.registerCommand("acciaccatura.reopenAnnotation", async (item?: AnnotationTreeItem) => {
+    const deps = lifecycleDeps();
+    if (!deps) return;
+    await reopenNote(deps, item?.annotation);
+    await redraw();
+  });
+
+  const clearFinished = vscode.commands.registerCommand("acciaccatura.clearFinishedAnnotations", async () => {
+    const deps = lifecycleDeps();
+    if (!deps) return;
+    await clearFinishedNotes(deps);
+    await redraw();
+  });
+
+  context.subscriptions.push(annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished);
 }
 
 export function deactivate(): void {

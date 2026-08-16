@@ -47,7 +47,9 @@ export class DecorationManager {
     const relPath = vscode.workspace.asRelativePath(editor.document.uri, false);
 
     const annotations = this.store.all();
-    const fileAnnotations = annotations.filter(a => a.anchor.file === relPath);
+    // Finished notes leave the gutter. They stay in the sidebar, where they can
+    // be reopened, but the code the reader is working on stays clear.
+    const fileAnnotations = annotations.filter(a => a.anchor.file === relPath && !a.resolvedAt);
 
     const iconDecorations: vscode.DecorationOptions[] = [];
     const spanDecorations: vscode.DecorationOptions[] = [];

@@ -23,19 +23,45 @@ precisely the guarantee an external anchor has to work hard to approximate and
 still only approximates. Durable architectural intent belongs in the source, in
 a design doc, or in this wiki. This is a **non-goal**, not an omission.
 
+One narrow exception, added later and written down in [scopes.md](scopes.md): a
+**standing scope** — a curated tour across many files, in a set order. A comment
+cannot say "read this third", so a tour is a different artefact rather than a
+long-lived note. Single notes stay short-lived by default.
+
 What follows from that:
 
 - **Expiry and resolution are first-class**, not a later feature. A store whose
-  natural state is "notes accumulate forever" is the wrong shape.
+  natural state is "notes accumulate forever" is the wrong shape. **Built** —
+  see [How a note ends](#how-a-note-ends) below.
 - **Anchoring precision matters most in the short term.** A note that lives for
   days rarely meets a rebase. This retires a large class of speculative work —
   cross-file anchoring, history-aware re-anchoring — until evidence demands it.
 - **Bloat is primarily a lifecycle problem**, not a compression problem. Notes
   that end when the work ends do not grow without bound.
 
-The README currently calls annotations "durable notes". That language predates
-this decision and overstates the lifecycle; it should be revised to describe
-working notes with a defined end.
+## How a note ends
+
+A note carries `resolvedAt` and `resolvedBy` (both optional, both absent while it
+is open — so a note written before these existed reads as open, not finished).
+Three steps, and no fourth:
+
+- **Finish it.** `store.resolve(id, by)` records who decided the work was done.
+  The note keeps its id, stays on disk, and leaves the agent-facing query and the
+  gutter. Both writers reach it: `resolve_annotation` over MCP, **Mark Done** in
+  the sidebar or the command palette. Finishing is not an overwrite — the first
+  answer stands, so two writers ending the same work do not fight.
+- **Undo it.** `store.reopen(id)` puts the note back in play. Finishing is a
+  judgement, and judgements are wrong sometimes.
+- **Delete it.** `store.sweepResolved({ resolvedBefore })` deletes notes finished
+  at or before a cutoff the caller picks, and never touches an open note whatever
+  its age. The boundary includes the cutoff itself, so "everything finished so
+  far" does not spare a note finished in the same millisecond. **Nothing sweeps on
+  a timer.** Throwing away someone's reasoning is a person's decision, so it runs
+  from an explicit command with an explicit yes.
+
+Finished notes are excluded from `store.query` by default — `includeResolved`
+brings them back for review UIs. The filter runs *before* the result cap, or a
+few finished notes would eat the three slots an agent gets.
 
 ## 2. Git-agnostic by construction
 
@@ -65,48 +91,49 @@ Concretely:
   commit, the layout must produce sane diffs and localised merge conflicts —
   see below — but the product must never behave *better* only in that mode.
 
-## 3. One shard per annotated source file
+### What the default actually is
 
-Annotations are stored **one file per annotated source file**, path-mirrored:
+The product ships no `.gitignore` and writes none. So in a user's repository
+`.acciaccatura/` **is committed unless they choose otherwise** — that is the real
+default, and it is now a decision rather than an accident. It is what makes the
+PR case in [scopes.md](scopes.md) work at all: the reviewer's agent reads the
+writer's notes because they arrived with the diff.
 
-```
-.acciaccatura/notes/src/billing/pay.ts.json     <- notes anchored in src/billing/pay.ts
-.acciaccatura/notes/src/store.ts.json
-```
+Two corrections that follow:
 
-Replacing the single `.acciaccatura/annotations.json`.
+- Earlier pages said `.acciaccatura/` was "ignored by default to keep proprietary
+  reasoning local". That was never product behaviour. It described the
+  `.gitignore` line in *this* repository, which exists only to keep the stores our
+  own dev builds write out of version control.
+- **Local by default means the product never transmits.** Nothing here opens a
+  socket, and no note leaves the machine by anything Acciaccatura does. Committing
+  and pushing is the user's own action, taken with the usual git tools and the
+  usual review — which is exactly the "explicit, visible user action" the
+  invariant asks for.
 
-Why this layout serves both modes:
+## 3. One shard per annotated source file — superseded
 
-- **Loading is proportional to what is open**, not to workspace history. The
-  editor reads the shard for the file being rendered; the MCP server reads the
-  shard for the file being queried. A workspace with thousands of notes costs
-  what a file's worth of notes costs.
-- **Writes stop being global.** Today every write rewrites the entire store —
-  measured at 1.8 MB rewritten per added note in a 2,000-note workspace, and a
-  full rewrite each time an anchor heals while the user types. Sharding bounds a
-  write to the file it concerns.
-- **Two writers stop colliding by default.** The editor annotating one file and
-  an agent annotating another no longer touch the same bytes.
-- **Merges localise, if committed.** A conflict lands in the shard for one
-  source file instead of in one workspace-wide JSON blob that every branch edits.
-- **Diffs are legible.** A reviewer sees `notes/src/pay.ts.json` change next to
-  `src/pay.ts`.
+**Superseded by [scopes.md](scopes.md) §3: shard by scope, not by source path.**
+Kept here because the reasoning matters more than the conclusion.
 
-What it costs, accepted knowingly:
+The plan was one path-mirrored file per annotated source file, e.g.
+`.acciaccatura/notes/src/billing/pay.ts.json`. It rested on write cost: every
+write rewrote the whole store, measured at 1.8 MB per added note in a 2,000-note
+workspace, plus a full rewrite each time an anchor healed while the user typed.
 
-- **Renaming a source file leaves its notes file behind** until something matches
-  them up again.
-  The anchor already carries the path, so reconciliation is possible; it is not
-  free.
-- **Cross-file questions need an index.** "Which files have annotations?"
-  (roadmap Phase 5) becomes a directory walk or a maintained index rather than a
-  filter over one array.
-- **Many small files.** Fine for git and for filesystems; worth revisiting only
-  if a workspace ever holds enough shards to make directory walks slow.
-- **Path mirroring has edge cases** — case-insensitive filesystems, path length
-  limits, files outside the workspace root. The shard stores its source path
-  internally so the filename is a convenience, not the source of truth.
+That case has since gone:
+
+- Notes are placed at read time now, so **rendering never writes** — the store
+  file is byte-identical after a session of typing.
+- Finishing and sweeping bound how far a store grows, so history no longer
+  accumulates forever.
+- Measured on the single file that remains: 2,000 notes is a 1 MB file that loads
+  in **1.9 ms** and answers a file+line query in **0.02 ms**.
+
+What was left was localised merge conflicts, in a mode we had already called
+supported-not-blessed. That is not enough to reshape the store. Sharding by
+scope, by contrast, follows the way the notes are actually used: a scope is the
+set you hand over, end, and review.
 
 ## 4. Requirements this decision imposes
 
@@ -117,7 +144,9 @@ that ignores them re-introduces the defect at a smaller scale.
   hold the whole store in memory and rewrite it, so the last writer silently
   destroys the other's work — reproduced with a human note erased by an agent
   note. Every write must re-read the shard, merge, and rename a temp file into
-  place.
+  place. **Reads queue with writes too**: a re-read that lands in the middle of a
+  write replaces the list that write is about to save. Two MCP tool calls
+  arriving together lost a finished note this way, 3 times out of 3.
 - **Never persist a re-anchor.** The capture is immutable; where a note
   currently sits is derived at read time. This removes the extra writes
   described above, and stops a note moving onto a near-copy of the code on
@@ -132,10 +161,11 @@ that ignores them re-introduces the defect at a smaller scale.
 
 ## 5. Effect on the roadmap
 
-- **Phase 3 (export/import for team sharing) drops in priority.** It assumed
-  human-to-human distribution as the collaboration model. It is not wrong, but
-  it is not the product's centre.
-- **Phase 4 (storage architecture) absorbs this decision.** The JSON-baseline
-  choice stands; this changes the file granularity, not the format.
-- **Phase 5 (annotation discovery) gains a prerequisite** — the cross-file index
+- **Export/import is dropped, not deferred.** It existed to move notes between
+  machines. The store is committed by default, so a PR's notes already travel
+  with the PR. See [scopes.md](scopes.md).
+- **Storage architecture absorbs this decision.** The JSON-baseline choice
+  stands; scopes change the file granularity, not the format.
+- **Discovery is answered by scopes**, not by a search index: an agent reads a
+  short list of named sets instead of guessing which files hold notes.
   described above.

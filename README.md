@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/edCariadhy/acciaccatura/actions/workflows/ci.yml/badge.svg)](https://github.com/edCariadhy/acciaccatura/actions/workflows/ci.yml)
 
-**AI-readable code annotations for VS Code.** Developers and agents attach durable notes to
+**AI-readable code annotations for VS Code.** Developers and agents attach working notes to
 code — intent, constraints, gotchas, decisions — and any agent can query and act on them
-through an MCP server.
+through an MCP server. A note lasts as long as the work it belongs to: mark it done and it
+stops reaching agents. For something meant to live forever, write a code comment instead.
 
 > An *acciaccatura* is a grace note: a tiny note sounded just before the main one that colours
 > how it's heard. A small annotation that shapes how an agent reads the code that follows.

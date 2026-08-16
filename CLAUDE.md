@@ -114,14 +114,18 @@ implementer must respect. Flag it explicitly when a change violates one.
 - **The MCP surface is a product API.** Few tools with sharp, prescriptive descriptions
   that state *when* to call them, not just what they do. Changes are additive and
   versioned. A tool description that drifts from actual behavior is a defect no prompt can
-  fix.
+  fix. A new tool must be a verb nothing else can express: if it can be an argument, it is
+  an argument; a document is a resource; a workflow is a prompt. See
+  [docs/wiki/standards/mcp-surface.md](docs/wiki/standards/mcp-surface.md).
 - **Context is the scarce resource.** Every returned annotation enters an agent's context
   window and is paid for on every later turn. Query results are ranked and bounded by
   default — "the three that matter", never a full dump of everything attached to a file.
 - **Two writers, one store.** Humans annotate in the editor; agents annotate over MCP.
   Provenance, trust level, and conflict behavior are part of the data model from day one.
-- **Local by default.** Annotations may carry proprietary reasoning. Nothing leaves the
-  machine without an explicit, visible user action.
+- **Local by default.** Annotations may carry proprietary reasoning, so the product itself
+  never transmits: no network calls, no sync, no telemetry carrying note content. The store
+  IS committed by default (we ship no `.gitignore`), because that is how a PR's notes reach
+  the reviewer — but that is the user's own git action, not something the product does.
 - **The extension host is shared.** Never block the UI thread; use lazy activation events;
   do no startup work that a large workspace turns into a stall.
 - **Stable Contracts.** Contracts with consumers we don't control — the MCP tool surface and

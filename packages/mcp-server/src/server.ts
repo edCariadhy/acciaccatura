@@ -77,11 +77,34 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
   );
 
   server.registerTool(
+    "resolve_annotation",
+    {
+      title: "Mark an annotation done",
+      description:
+        "Call this when you have finished the work a note asked for, or the thing it warned about no longer applies. The note was still right — it is just done, so it stops being handed to the next agent. Use remove_annotation instead when the note itself was wrong. Get the id from get_annotations.",
+      inputSchema: {
+        id: z.string().describe("Annotation id from get_annotations"),
+      },
+    },
+    async ({ id }) => {
+      const done = await store.resolve(id, "agent");
+      return {
+        content: [
+          {
+            type: "text",
+            text: done ? `Marked ${id} done at ${done.resolvedAt}` : `No annotation with id ${id}`,
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
     "remove_annotation",
     {
       title: "Remove annotation",
       description:
-        "Call this only when you are sure a note is out of date — the code it described is gone, or its advice is now wrong. Deleting an old note is better than leaving one that sends the next agent the wrong way. Get the id from get_annotations.",
+        "Call this only when you are sure a note is wrong — the code it described is gone, or its advice would now send the next agent the wrong way. If the note was right and the work it asked for is simply finished, call resolve_annotation instead, which keeps the record. Get the id from get_annotations.",
       inputSchema: {
         id: z.string().describe("Annotation id from get_annotations"),
       },

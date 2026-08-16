@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -234,5 +234,227 @@ describe("AnnotationStore", () => {
     const raw = await readFile(storePath, "utf8");
     expect(raw.endsWith("}\n")).toBe(true);
     expect(raw).toContain("\n  ");
+  });
+
+  // A note is a working note between collaborators, not a permanent record. It
+  // needs an end, or the store only ever grows and every stale note keeps
+  // spending an agent's context. See docs/wiki/standards/storage-and-lifecycle.md.
+  describe("finishing a note", () => {
+    it("starts a note open", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const saved = await store.add(draft());
+      expect(saved.resolvedAt).toBeUndefined();
+    });
+
+    it("marks a note done without changing who wrote it or its id", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const saved = await store.add(draft({ provenance: "agent" }));
+
+      const done = await store.resolve(saved.id, "human");
+
+      expect(done?.id).toBe(saved.id);
+      expect(done?.createdAt).toBe(saved.createdAt);
+      expect(done?.provenance).toBe("agent");
+      expect(done?.resolvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(done?.resolvedBy).toBe("human");
+    });
+
+    it("keeps a finished note out of the query an agent sees", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const open = await store.add(draft({ body: "still open" }));
+      const done = await store.add(draft({ body: "already handled" }));
+      await store.resolve(done.id, "agent");
+
+      const found = store.query({ file: "src/a.ts", limit: 10 });
+      expect(found.map((a) => a.id)).toEqual([open.id]);
+    });
+
+    it("hands back finished notes only when asked for them", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const done = await store.add(draft());
+      await store.resolve(done.id, "human");
+
+      const found = store.query({ file: "src/a.ts", limit: 10, includeResolved: true });
+      expect(found.map((a) => a.id)).toEqual([done.id]);
+    });
+
+    it("does not spend the result bound on notes it will not return", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      // Three finished notes ahead of three open ones: the default cap is 3, so
+      // filtering after the cap would hand the agent an empty answer.
+      for (let i = 0; i < 3; i++) {
+        const stale = await store.add(draft({ body: `handled ${i}` }));
+        await store.resolve(stale.id, "agent");
+      }
+      for (let i = 0; i < 3; i++) await store.add(draft({ body: `open ${i}` }));
+
+      const found = store.query({ file: "src/a.ts" });
+      expect(found).toHaveLength(3);
+      expect(found.every((a) => a.resolvedAt === undefined)).toBe(true);
+    });
+
+    it("keeps the first finish time when resolve runs twice", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const saved = await store.add(draft());
+      const first = await store.resolve(saved.id, "human");
+
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(Date.parse(first!.resolvedAt!) + 60_000));
+      const second = await store.resolve(saved.id, "agent");
+      vi.useRealTimers();
+
+      // Two writers can both decide the work is done. The first one to say so
+      // is the record; the second must not rewrite it.
+      expect(second?.resolvedAt).toBe(first!.resolvedAt);
+      expect(second?.resolvedBy).toBe("human");
+    });
+
+    it("reopens a note that was finished by mistake", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const saved = await store.add(draft());
+      await store.resolve(saved.id, "human");
+
+      const back = await store.reopen(saved.id);
+
+      expect(back?.resolvedAt).toBeUndefined();
+      expect(back?.resolvedBy).toBeUndefined();
+      expect(store.query({ file: "src/a.ts" }).map((a) => a.id)).toEqual([saved.id]);
+    });
+
+    it("reports an unknown id instead of inventing a note", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      expect(await store.resolve("no-such-id", "human")).toBeUndefined();
+      expect(await store.reopen("no-such-id")).toBeUndefined();
+    });
+
+    it("is not lost when a read lands in the middle of the write", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const saved = await store.add(draft());
+
+      // One process doing two jobs at once: the MCP server finishes a note for
+      // one tool call while another tool call re-reads the file. A read that
+      // lands mid-write replaces the list the write is about to save, and the
+      // finish disappears. Reads have to queue behind writes.
+      let writeFinished = false;
+      const write = store.resolve(saved.id, "agent").then(() => {
+        writeFinished = true;
+      });
+      const readSawTheWrite = await store.reload().then(() => writeFinished);
+      await write;
+
+      expect(readSawTheWrite).toBe(true);
+      const reader = new AnnotationStore(storePath);
+      await reader.load();
+      expect(reader.get(saved.id)?.resolvedAt).toBeDefined();
+    });
+
+    it("survives the other writer, like every other change", async () => {
+      const editor = new AnnotationStore(storePath);
+      const agent = new AnnotationStore(storePath);
+      await editor.load();
+      await agent.load();
+      const mine = await editor.add(draft({ provenance: "human" }));
+      await agent.reload();
+      const theirs = await agent.add(draft({ provenance: "agent" }));
+
+      await editor.resolve(mine.id, "human");
+
+      await agent.reload();
+      expect(agent.get(theirs.id)).toBeDefined();
+      expect(agent.get(mine.id)?.resolvedAt).toBeDefined();
+    });
+  });
+
+  describe("sweeping finished notes", () => {
+    it("deletes finished notes older than the cutoff", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const old = await store.add(draft({ body: "finished last week" }));
+      await store.resolve(old.id, "human");
+
+      const removed = await store.sweepResolved({ resolvedBefore: new Date(Date.now() + 1000) });
+
+      expect(removed).toBe(1);
+      expect(store.all()).toHaveLength(0);
+    });
+
+    it("deletes a note finished at the very moment of the cutoff", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const note = await store.add(draft());
+      const done = await store.resolve(note.id, "human");
+
+      // "Delete everything finished so far" passes the current moment. A note
+      // finished in that same millisecond must go too, or the editor says it
+      // deleted one note and deletes none.
+      const removed = await store.sweepResolved({ resolvedBefore: new Date(done!.resolvedAt!) });
+
+      expect(removed).toBe(1);
+    });
+
+    it("keeps finished notes newer than the cutoff", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const recent = await store.add(draft());
+      await store.resolve(recent.id, "human");
+
+      const removed = await store.sweepResolved({ resolvedBefore: new Date(Date.now() - 60_000) });
+
+      expect(removed).toBe(0);
+      expect(store.get(recent.id)).toBeDefined();
+    });
+
+    it("never deletes an open note, however old", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const open = await store.add(draft());
+
+      // A cutoff far in the future: everything finished would go. Nothing did.
+      const removed = await store.sweepResolved({ resolvedBefore: new Date(Date.now() + 86_400_000) });
+
+      expect(removed).toBe(0);
+      expect(store.get(open.id)).toBeDefined();
+    });
+  });
+
+  it("reads a note saved before this field existed as still open", async () => {
+    // The store file is a contract with files we do not control. An older
+    // annotation has no resolvedAt at all, and must not read as finished.
+    const older = {
+      version: 1,
+      annotations: [
+        {
+          id: "written-by-an-older-build",
+          body: "no lifecycle fields here",
+          anchor: {
+            file: "src/a.ts",
+            startLine: 1,
+            endLine: 1,
+            snapshot: "const x = 1;",
+            snapshotHash: "0".repeat(64),
+          },
+          provenance: "human",
+          trust: "authoritative",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    await mkdir(dirname(storePath), { recursive: true });
+    await writeFile(storePath, JSON.stringify(older), "utf8");
+
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    expect(store.query({ file: "src/a.ts" })).toHaveLength(1);
+    expect(store.get("written-by-an-older-build")?.resolvedAt).toBeUndefined();
   });
 });
