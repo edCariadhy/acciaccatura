@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { AnnotationStore, Annotation, NoteLines, findNoteLines } from '@acciaccatura/core';
 
+import { filesWithNotes, noteView, notesForFile } from './viewModel.js';
+
 export class AnnotationTreeItem extends vscode.TreeItem {
   constructor(
     public readonly annotation: Annotation,
@@ -8,60 +10,30 @@ export class AnnotationTreeItem extends vscode.TreeItem {
     /** Where the code sits now. The saved anchor only says where it started. */
     public readonly lines: NoteLines = { state: 'same', startLine: annotation.anchor.startLine, endLine: annotation.anchor.endLine }
   ) {
-    super(annotation.body.split('\n')[0] || 'Annotation', collapsibleState);
+    // What to show is decided in viewModel.ts, which has no vscode import and
+    // is unit-tested. This class only turns those answers into a TreeItem.
+    const view = noteView(annotation, lines);
+    super(view.label, collapsibleState);
 
-    const finished = Boolean(annotation.resolvedAt);
-
-    this.tooltip = annotation.body;
-    this.contextValue = finished
-      ? 'resolved'
-      : annotation.trust === 'suggested'
-        ? 'suggested'
-        : 'authoritative';
-
-    if (lines.state === 'gone') {
-      this.description = 'code not found';
-      this.tooltip = `${annotation.body}\n\nWe can't find the code this note was written for. It was on lines ${annotation.anchor.startLine}–${annotation.anchor.endLine}.`;
-    } else {
-      this.description =
-        lines.state === 'moved'
-          ? `L${lines.startLine}-L${lines.endLine} (moved)`
-          : `L${lines.startLine}-L${lines.endLine}`;
-    }
-
-    if (finished) {
-      // Say who finished it: an agent closing a human's note is worth seeing.
-      this.description = `${this.description} · done`;
-      this.tooltip = `${annotation.body}\n\nDone — marked by the ${annotation.resolvedBy ?? 'unknown'} writer.`;
-    }
+    this.tooltip = view.tooltip;
+    this.description = view.description;
+    this.contextValue = view.contextValue;
+    this.iconPath = new vscode.ThemeIcon(view.icon);
 
     const folders = vscode.workspace.workspaceFolders;
     if (folders && folders.length > 0) {
       const uri = vscode.Uri.joinPath(folders[0]!.uri, annotation.anchor.file);
       this.resourceUri = uri;
-      // Jump to where the code is now. Opening the saved lines would send the
-      // reader to whatever code took that place.
-      const target = lines.state === 'gone' ? undefined : lines;
       this.command = {
         command: 'vscode.open',
         title: 'Open File',
         arguments: [
           uri,
-          target
-            ? { selection: new vscode.Range(target.startLine - 1, 0, target.endLine - 1, 0) }
+          view.reveal
+            ? { selection: new vscode.Range(view.reveal.startLine - 1, 0, view.reveal.endLine - 1, 0) }
             : {}
         ]
       };
-    }
-
-    if (finished) {
-      this.iconPath = new vscode.ThemeIcon('check');
-    } else if (lines.state === 'gone') {
-      this.iconPath = new vscode.ThemeIcon('warning');
-    } else if (annotation.trust === 'suggested') {
-      this.iconPath = new vscode.ThemeIcon('lightbulb');
-    } else {
-      this.iconPath = new vscode.ThemeIcon('comment');
     }
   }
 }
@@ -108,15 +80,12 @@ export class AnnotationTreeProvider implements vscode.TreeDataProvider<vscode.Tr
     if (!vscode.workspace.workspaceFolders) {
       return [];
     }
-    
+
     const annotations = this.store.all();
-    
+
     if (element) {
       if (element instanceof FileTreeItem) {
-        // Open notes first: finished ones are kept for review, not for reading.
-        const fileAnnos = annotations
-          .filter(a => a.anchor.file === element.file)
-          .sort((a, b) => Number(Boolean(a.resolvedAt)) - Number(Boolean(b.resolvedAt)));
+        const fileAnnos = notesForFile(annotations, element.file);
         // One read per expanded file, not per note. Reading through the editor
         // means unsaved edits count too.
         const fileText = await this.readFile(element.file);
@@ -125,10 +94,10 @@ export class AnnotationTreeProvider implements vscode.TreeDataProvider<vscode.Tr
         );
       }
       return [];
-    } else {
-      // Group by file
-      const files = [...new Set(annotations.map(a => a.anchor.file))];
-      return files.map(f => new FileTreeItem(f, vscode.TreeItemCollapsibleState.Expanded));
     }
+
+    return filesWithNotes(annotations).map(
+      f => new FileTreeItem(f, vscode.TreeItemCollapsibleState.Expanded),
+    );
   }
 }

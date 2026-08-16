@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
-import { AnnotationStore, findNoteLines } from '@acciaccatura/core';
+import { AnnotationStore } from '@acciaccatura/core';
+
+import { gutterMarks } from './viewModel.js';
 
 let noteStartIcon: vscode.TextEditorDecorationType;
 let noteSpanLine: vscode.TextEditorDecorationType;
@@ -39,58 +41,42 @@ export class DecorationManager {
     if (!editor) {
       return;
     }
-    
+
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length === 0) return;
 
     // Relative path to workspace root
     const relPath = vscode.workspace.asRelativePath(editor.document.uri, false);
 
-    const annotations = this.store.all();
-    // Finished notes leave the gutter. They stay in the sidebar, where they can
-    // be reopened, but the code the reader is working on stays clear.
-    const fileAnnotations = annotations.filter(a => a.anchor.file === relPath && !a.resolvedAt);
+    // What to draw is decided in viewModel.ts, which has no vscode import and
+    // is unit-tested — including that finished notes leave the gutter and that
+    // a note whose code is gone says so instead of pointing at a guess. The
+    // buffer, not the file on disk, so notes follow unsaved edits.
+    const marks = gutterMarks(this.store.all(), relPath, editor.document.getText());
 
     const iconDecorations: vscode.DecorationOptions[] = [];
     const spanDecorations: vscode.DecorationOptions[] = [];
     const missingCodeDecorations: vscode.DecorationOptions[] = [];
 
-    // The buffer, not the file on disk: notes must follow unsaved edits too.
-    const fileText = editor.document.getText();
-
-    for (const annotation of fileAnnotations) {
-      // Work out where the code is now. Nothing is written back: the saved
-      // anchor is the capture, and this runs on every keystroke.
-      const found = findNoteLines(annotation.anchor, fileText);
-
-      if (found.state === 'gone') {
-        // Say so in the open, at line 1, rather than leave the note pointing at
-        // whatever code happens to sit on those lines today.
+    for (const mark of marks) {
+      if (mark.kind === 'missing') {
+        // Drawn at line 1, where it cannot be missed.
         missingCodeDecorations.push({
           range: new vscode.Range(0, 0, 0, 0),
-          hoverMessage: `**Note with no code:** ${annotation.body}\n\n*We can't find the code this note was written for. Open the Acciaccatura view in the sidebar to move it or delete it.*`
+          hoverMessage: mark.hover,
         });
         continue;
       }
 
-      const startPos = new vscode.Position(found.startLine - 1, 0);
-      const endPos = new vscode.Position(found.endLine - 1, 0);
-
-      const md = new vscode.MarkdownString();
-      md.appendMarkdown(`**Acciaccatura (${annotation.trust})**\n\n`);
-      md.appendMarkdown(annotation.body);
-      if (found.state === 'moved') {
-        md.appendMarkdown(
-          `\n\n*The code moved here from lines ${annotation.anchor.startLine}–${annotation.anchor.endLine}.*`,
-        );
-      }
+      const startPos = new vscode.Position(mark.startLine - 1, 0);
+      const endPos = new vscode.Position(mark.endLine - 1, 0);
 
       // Only the side line holds the hover text. The icon sits on the same
       // first line, so hover text on both would show the note twice.
       iconDecorations.push({ range: new vscode.Range(startPos, startPos) });
       spanDecorations.push({
         range: new vscode.Range(startPos, endPos),
-        hoverMessage: md
+        hoverMessage: new vscode.MarkdownString(mark.hover),
       });
     }
 
