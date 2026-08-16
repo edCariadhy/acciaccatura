@@ -581,6 +581,102 @@ describe("AnnotationStore", () => {
       expect(() => store.query({} as never)).toThrow(/file|scope/i);
     });
 
+    describe("closing a set", () => {
+      it("finishes every open note in the set, and says how many", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+        await store.add(inScope("pr/142", 2));
+
+        expect(await store.resolveScope("pr/142", "agent")).toBe(2);
+        expect(store.query({ scope: "pr/142" })).toHaveLength(0);
+        expect(store.query({ scope: "pr/142", includeResolved: true })).toHaveLength(2);
+      });
+
+      it("records who closed it on every note", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+        await store.resolveScope("pr/142", "agent");
+
+        const [note] = store.query({ scope: "pr/142", includeResolved: true });
+        expect(note?.resolvedBy).toBe("agent");
+        expect(note?.resolvedAt).toBeTruthy();
+      });
+
+      it("leaves other sets and unscoped notes alone", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+        await store.add(inScope("onboarding/billing", 1));
+        const loose = await store.add(draft());
+
+        expect(await store.resolveScope("pr/142", "agent")).toBe(1);
+        expect(store.query({ scope: "onboarding/billing" })).toHaveLength(1);
+        expect(store.get(loose.id)?.resolvedAt).toBeUndefined();
+      });
+
+      it("keeps the first finish time when a set is closed twice", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const first = await store.add(inScope("pr/142", 1));
+        await store.resolveScope("pr/142", "human");
+        const when = store.get(first.id)?.resolvedAt;
+
+        // Closing again finishes nothing new, and must not overwrite who ended
+        // it — the same rule single-note resolve follows.
+        expect(await store.resolveScope("pr/142", "agent")).toBe(0);
+        expect(store.get(first.id)?.resolvedAt).toBe(when);
+        expect(store.get(first.id)?.resolvedBy).toBe("human");
+      });
+
+      it("counts only what it actually finished in a half-closed set", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const done = await store.add(inScope("pr/142", 1));
+        await store.add(inScope("pr/142", 2));
+        await store.resolve(done.id, "human");
+
+        expect(await store.resolveScope("pr/142", "agent")).toBe(1);
+      });
+
+      it("reports nothing done for a set that does not exist", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+
+        expect(await store.resolveScope("pr/999", "agent")).toBe(0);
+      });
+
+      it("is reversible one note at a time", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("pr/142", 1));
+        await store.resolveScope("pr/142", "agent");
+        await store.reopen(note.id);
+
+        // Closing is a judgement, so it has to be undoable — that asymmetry is
+        // why an agent may close but only a person may delete.
+        expect(store.query({ scope: "pr/142" })).toHaveLength(1);
+      });
+
+      it("survives the other writer, like every other change", async () => {
+        const mine = new AnnotationStore(storePath);
+        await mine.load();
+        await mine.add(inScope("pr/142", 1));
+
+        const theirs = new AnnotationStore(storePath);
+        await theirs.load();
+
+        // Both hold the store in memory; closing must not delete their note.
+        const added = await theirs.add(draft({ body: "written by the editor" }));
+        await mine.resolveScope("pr/142", "agent");
+
+        await theirs.reload();
+        expect(theirs.get(added.id)).toBeDefined();
+      });
+    });
+
     it("reads a note saved before scopes existed as belonging to no set", async () => {
       const older = {
         version: 1,

@@ -200,6 +200,34 @@ export class AnnotationStore {
     });
   }
 
+  /**
+   * Finish every open note in one named set, and report how many were finished.
+   * A merged pull request ends twenty notes at once; doing that one round trip
+   * at a time is the kind of cost that stops an agent bothering at all.
+   *
+   * Notes already finished are left exactly as they are and are not counted, so
+   * the first answer stands and closing twice is safe — the same rule
+   * {@link AnnotationStore.resolve} follows for a single note.
+   *
+   * This is the prune verb, and it is deliberately the reversible one: closing
+   * keeps every record and {@link AnnotationStore.reopen} undoes it note by
+   * note. Deleting is the one that loses someone's reasoning, which is why it
+   * stays a person's decision in {@link AnnotationStore.sweepResolved}.
+   */
+  async resolveScope(scope: string, by: Provenance): Promise<number> {
+    return this.#mutate((annotations) => {
+      const now = new Date().toISOString();
+      let finished = 0;
+      for (let i = 0; i < annotations.length; i++) {
+        const existing = annotations[i]!;
+        if (existing.scope !== scope || existing.resolvedAt) continue;
+        annotations[i] = { ...existing, resolvedAt: now, resolvedBy: by, updatedAt: now };
+        finished++;
+      }
+      return finished;
+    });
+  }
+
   /** Put a finished note back in play — the work was not done after all. */
   async reopen(id: string): Promise<Annotation | undefined> {
     return this.#mutate((annotations) => {

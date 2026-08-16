@@ -114,13 +114,50 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Mark an annotation done",
       description:
-        "Call this when you have finished the work a note asked for, or the thing it warned about no longer applies. The note was still right — it is just done, so it stops being handed to the next agent. Use remove_annotation instead when the note itself was wrong. Get the id from get_annotations.",
+        "Call this when you have finished the work a note asked for, or the thing it warned about no longer applies. The note was still right — it is just done, so it stops being handed to the next agent. Use remove_annotation instead when the note itself was wrong. Get the id from get_annotations. Pass `scope` instead of `id` to close a whole set at once — do that when the change a set was written for has merged, rather than finishing twenty notes one at a time. Closing keeps every note, so it is safe to undo. Pass one or the other, never both.",
       inputSchema: {
-        id: z.string().describe("Annotation id from get_annotations"),
+        id: z.string().optional().describe("Annotation id from get_annotations"),
+        scope: z
+          .string()
+          .optional()
+          .describe("Named set to close entirely, e.g. pr/142. Finishes every open note in it"),
       },
     },
-    async ({ id }) => {
-      const done = await store.resolve(id, "agent");
+    async ({ id, scope }) => {
+      // One or the other: closing a set and finishing a note are different
+      // acts, and guessing which was meant would sometimes end nineteen notes
+      // nobody asked about.
+      if ((id === undefined) === (scope === undefined)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text:
+                id === undefined
+                  ? "Pass an id to finish one note, or a scope to close a set."
+                  : "Pass an id or a scope, not both: they are different acts.",
+            },
+          ],
+        };
+      }
+
+      if (scope !== undefined) {
+        const finished = await store.resolveScope(scope, "agent");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                finished === 0
+                  ? `No open notes in ${scope}; nothing to close.`
+                  : `Closed ${scope}: finished ${finished} note${finished === 1 ? "" : "s"}.`,
+            },
+          ],
+        };
+      }
+
+      const done = await store.resolve(id!, "agent");
       return {
         content: [
           {
