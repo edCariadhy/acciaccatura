@@ -51,7 +51,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       # Cache the downloaded VS Code build (~300 MB) between runs.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: packages/extension/.vscode-test
           key: vscode-test-${{ runner.os }}
