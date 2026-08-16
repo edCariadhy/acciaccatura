@@ -61,7 +61,7 @@ The foundational architecture is in place and the critical paths are working and
 ### Phase 5: The surface, in the right primitives
 *MCP has tools, resources and prompts; we ship only tools. See [standards/mcp-surface.md](standards/mcp-surface.md).*
 - [x] **`update_annotation`:** repairs a note's body, anchor, trust or place in a set without reissuing its id. Taken before sharding because the staleness rollup shipped detection with no remedy: an agent could see `1 drifted` and had no verb to fix it. A re-anchor needs all four anchor fields together, and a call that changes nothing is refused rather than reported as a repair.
-- [ ] **Scopes as resources:** the scope list and each scope as readable documents, so discovery costs no tool slot.
+- [x] **Scopes as resources:** `acciaccatura://scopes` is the index and `acciaccatura://scopes/{+scope}` is one set, read in its author's order. The template lists every set, so `resources/list` answers "what is here" with no tool call spent and no line added to the tool list. The reserved expansion `{+scope}` is what keeps the slash in `pr/142`; the plain form encodes it and then fails to match its own URI back. A resource reads no code, so it says where each note was **written** and sends the reader to `get_annotations` for where the code is now.
 - [ ] **Procedures as prompts:** review-in-order, onboarding tour, stale-scope triage. Prompts, not a Claude-only skill, or non-Claude agents lose the workflow.
 
 ### Phase 6: Freshness

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ResourceListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { AnnotationStore } from "@acciaccatura/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -615,5 +616,279 @@ describe("MCP server integration", () => {
       const annotate = tools.find((t) => t.name === "annotate_code");
       expect(annotate?.description ?? "").toMatch(/scope/i);
     });
+  });
+});
+
+/**
+ * Sets as resources.
+ *
+ * Discovery used to cost a tool call, and a tool costs a line in the agent's
+ * tool list on every turn whether it is used or not. `resources/list` is the
+ * protocol's own answer to "what is here", so the sets belong there. A resource
+ * reads no code, which is exactly why it must not state a position as if it
+ * were current.
+ */
+describe("sets as resources", () => {
+  /** Put `count` notes in a set, in order, and hand back their ids. */
+  async function seedSet(scope: string, bodies: string[]): Promise<string[]> {
+    const ids: string[] = [];
+    for (const [i, body] of bodies.entries()) {
+      const saved = await client.callTool({
+        name: "annotate_code",
+        arguments: {
+          file: "src/math.ts",
+          startLine: 1,
+          endLine: 1,
+          snapshot: "export function add(a, b) {",
+          body,
+          scope,
+          order: i + 1,
+        },
+      });
+      ids.push((textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1] ?? "");
+    }
+    return ids;
+  }
+
+  it("lists every set by name, so finding one costs no tool call", async () => {
+    await seedSet("pr/142", ["read this first", "then this"]);
+    await seedSet("onboarding/billing", ["how billing starts"]);
+
+    const { resources } = await client.listResources();
+    const uris = resources.map((r) => r.uri);
+    expect(uris).toContain("acciaccatura://scopes/pr/142");
+    expect(uris).toContain("acciaccatura://scopes/onboarding/billing");
+    // The listing carries what each set holds, so a client can choose without
+    // reading any of them.
+    const pr = resources.find((r) => r.uri === "acciaccatura://scopes/pr/142");
+    expect(pr?.description ?? "").toMatch(/2 notes/);
+    expect(pr?.description ?? "").toMatch(/2 open/);
+  });
+
+  it("reads back every URI it lists, slashes and all", async () => {
+    await seedSet("pr/142", ["a note"]);
+    await seedSet("onboarding/billing", ["another note"]);
+
+    // The round trip is the property, not the spelling. `{scope}` percent-
+    // encodes the slash and then fails to match its own URI back, so every
+    // listed set becomes unreadable — and set names are `kind/name` by
+    // convention, which makes that every set there is. Checking only the
+    // listing would miss it: the listing builds its URIs by hand.
+    const { resources } = await client.listResources();
+    expect(resources.length).toBeGreaterThan(0);
+    for (const resource of resources) {
+      const read = await client.readResource({ uri: resource.uri });
+      expect(String(read.contents[0]?.text ?? ""), `could not read ${resource.uri}`).not.toBe("");
+    }
+    expect(resources.map((r) => r.uri)).toContain("acciaccatura://scopes/pr/142");
+  });
+
+  it("reads a set in its author's order, not the order it was written", async () => {
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "second", scope: "pr/9", order: 2 },
+    });
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "first", scope: "pr/9", order: 1 },
+    });
+
+    const read = await client.readResource({ uri: "acciaccatura://scopes/pr/9" });
+    const text = String(read.contents[0]?.text ?? "");
+    // Sequence is the point of a set: "read the migration before the handler"
+    // is information no ranking can work out.
+    expect(text.indexOf("first")).toBeLessThan(text.indexOf("second"));
+  });
+
+  it("says its line numbers are where a note was written, not where the code is", async () => {
+    await seedSet("pr/142", ["a note"]);
+    const read = await client.readResource({ uri: "acciaccatura://scopes/pr/142" });
+    const text = String(read.contents[0]?.text ?? "");
+    // A resource reads no code, so it cannot know whether those lines still
+    // hold. Stating a position without that caveat is the quiet wrong answer.
+    expect(text).toMatch(/written at 1-1/);
+    expect(text).toMatch(/not where the code is now/i);
+    expect(text).toMatch(/get_annotations/);
+  });
+
+  it("refuses a set that does not exist rather than returning an empty one", async () => {
+    await seedSet("pr/142", ["a note"]);
+    // "No such set" and "a set with nothing in it" are different answers, and
+    // an agent has to be able to tell them apart.
+    await expect(client.readResource({ uri: "acciaccatura://scopes/pr/999" })).rejects.toThrow(
+      /No set named pr\/999/,
+    );
+  });
+
+  it("finds a set whose name a client chose to percent-encode", async () => {
+    await seedSet("pr/142", ["a note"]);
+    const read = await client.readResource({ uri: "acciaccatura://scopes/pr%2F142" });
+    expect(String(read.contents[0]?.text ?? "")).toContain("a note");
+  });
+
+  it("sees a set written after the client last listed", async () => {
+    // Two writers, one store. The server holds a copy from startup and the
+    // human keeps annotating; a set they made must not be invisible because
+    // this process started first.
+    const editor = await editorStore();
+    await editor.add({
+      body: "written in the editor",
+      anchor: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "export function add(a, b) {" },
+      provenance: "human",
+      scope: "pr/later",
+    });
+
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri)).toContain("acciaccatura://scopes/pr/later");
+  });
+
+  it("offers the index as a document, not only as a client-side listing", async () => {
+    await seedSet("pr/142", ["a note"]);
+    const read = await client.readResource({ uri: "acciaccatura://scopes" });
+    const text = String(read.contents[0]?.text ?? "");
+    expect(text).toMatch(/pr\/142/);
+    expect(text).toMatch(/1 note\b/);
+  });
+
+  it("says a workspace has no sets rather than returning an empty document", async () => {
+    const read = await client.readResource({ uri: "acciaccatura://scopes" });
+    expect(String(read.contents[0]?.text ?? "")).toMatch(/No named sets/i);
+  });
+
+  it("tells a closed set apart from an empty one", async () => {
+    const [id] = await seedSet("pr/142", ["a note"]);
+    await client.callTool({ name: "resolve_annotation", arguments: { id } });
+
+    const read = await client.readResource({ uri: "acciaccatura://scopes/pr/142" });
+    const text = String(read.contents[0]?.text ?? "");
+    // A set whose work is over is a real state with a real meaning. "No notes"
+    // would read as a set nobody ever wrote into.
+    expect(text).toMatch(/Every note in this set is finished/i);
+    expect(text).not.toMatch(/No open notes/i);
+  });
+
+  it("leaves finished notes out of the reading, but says they are there", async () => {
+    const ids = await seedSet("pr/142", ["done already", "still to read"]);
+    await client.callTool({ name: "resolve_annotation", arguments: { id: ids[0] } });
+
+    const read = await client.readResource({ uri: "acciaccatura://scopes/pr/142" });
+    const text = String(read.contents[0]?.text ?? "");
+    expect(text).toContain("still to read");
+    expect(text).not.toContain("done already");
+    expect(text).toMatch(/1 finished note is not listed/);
+  });
+
+  it("does not spend a tool slot on any of this", async () => {
+    const { tools } = await client.listTools();
+    // The whole reason resources exist here: every tool is a line in the tool
+    // list on every turn, paid whether or not it is ever called.
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "annotate_code",
+      "get_annotations",
+      "remove_annotation",
+      "resolve_annotation",
+      "scope_status",
+      "update_annotation",
+    ]);
+  });
+});
+
+/**
+ * We advertise `resources.listChanged`, which entitles a client to list the
+ * sets once and then wait to be told. Advertising a capability and never
+ * honouring it leaves that client reading a list that quietly went out of date.
+ */
+describe("telling a client the set list moved", () => {
+  /** Connect a client that records every resource-list-changed notification. */
+  async function connectCounting(): Promise<{ c: Client; count: () => number }> {
+    const store = new AnnotationStore(join(root, ".acciaccatura", "annotations.json"));
+    await store.load();
+    const server = createServer(store, root);
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverT);
+    const c = new Client({ name: "test", version: "0" });
+    let seen = 0;
+    c.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+      seen++;
+    });
+    await c.connect(clientT);
+    return { c, count: () => seen };
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+
+  it("says so when a note creates a set that did not exist", async () => {
+    const { c, count } = await connectCounting();
+    await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/new" },
+    });
+    await settle();
+    expect(count()).toBe(1);
+    await c.close();
+  });
+
+  it("stays quiet for a note that joins a set already there", async () => {
+    const { c, count } = await connectCounting();
+    const add = (body: string) =>
+      c.callTool({
+        name: "annotate_code",
+        arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body, scope: "pr/1" },
+      });
+    await add("first");
+    await settle();
+    const afterFirst = count();
+    await add("second");
+    await settle();
+    // The list did not change, so there is nothing to tell. A notification per
+    // write would train a client to re-list for no reason.
+    expect(count()).toBe(afterFirst);
+    await c.close();
+  });
+
+  it("stays quiet when a note is only marked done", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "resolve_annotation", arguments: { id } });
+    await settle();
+    // A finished note still belongs to its set, so the list is unchanged.
+    expect(count()).toBe(before);
+    await c.close();
+  });
+
+  it("says so when the last note leaves a set", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "remove_annotation", arguments: { id } });
+    await settle();
+    expect(count()).toBe(before + 1);
+    await c.close();
+  });
+
+  it("says so when a note is moved out of its set", async () => {
+    const { c, count } = await connectCounting();
+    const saved = await c.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "x", body: "n", scope: "pr/1" },
+    });
+    await settle();
+    const before = count();
+    const id = (textOf(saved as never).match(/Saved annotation (\S+)/) ?? [])[1];
+    await c.callTool({ name: "update_annotation", arguments: { id, scope: null } });
+    await settle();
+    expect(count()).toBe(before + 1);
+    await c.close();
   });
 });

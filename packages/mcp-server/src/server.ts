@@ -1,11 +1,11 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { ageInDays, driftStatus, findNoteLines, readRegion, reportScope } from "@acciaccatura/core";
-import type { Annotation, AnnotationStore } from "@acciaccatura/core";
+import type { Annotation, AnnotationStore, ScopeIndexEntry } from "@acciaccatura/core";
 
 /**
  * Build the Acciaccatura MCP server over a loaded store.
@@ -18,6 +18,30 @@ import type { Annotation, AnnotationStore } from "@acciaccatura/core";
  */
 export function createServer(store: AnnotationStore, workspaceRoot: string): McpServer {
   const server = new McpServer({ name: "acciaccatura", version: "0.0.0" });
+
+  /** The set names as the store currently holds them, as one comparable string. */
+  const scopeNames = (): string =>
+    store
+      .scopes()
+      .map((s) => s.scope)
+      .join("\n");
+
+  /**
+   * Tell the client the resource list changed, if this write changed it.
+   *
+   * We advertise `resources.listChanged`, which entitles a client to list once
+   * and then wait to be told — so advertising it and never sending it would
+   * leave a client reading a set list that quietly went out of date. Only
+   * writes that add or empty a set change the list; finishing a note does not,
+   * because a finished note still belongs to its set.
+   *
+   * This covers writes made **through this server**. A set the person creates
+   * in the editor still arrives late, because nothing watches the store yet —
+   * every read reloads, so it is never wrong, only late.
+   */
+  const announceIfScopesChanged = (before: string): void => {
+    if (scopeNames() !== before) server.sendResourceListChanged();
+  };
 
   server.registerTool(
     "get_annotations",
@@ -89,6 +113,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       },
     },
     async ({ file, startLine, endLine, snapshot, body, trust, scope, order }) => {
+      const before = scopeNames();
       const saved = await store.add({
         body,
         anchor: { file, startLine, endLine, snapshot },
@@ -97,6 +122,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
         scope,
         order,
       });
+      announceIfScopesChanged(before);
       const where = scope ? ` in ${scope}` : "";
       return {
         content: [
@@ -180,7 +206,9 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       },
     },
     async ({ id }) => {
+      const before = scopeNames();
       const removed = await store.remove(id);
+      announceIfScopesChanged(before);
       return {
         content: [{ type: "text", text: removed ? `Removed ${id}` : `No annotation with id ${id}` }],
       };
@@ -260,7 +288,9 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
         };
       }
 
+      const before = scopeNames();
       const updated = await store.update(id, changes);
+      announceIfScopesChanged(before);
       if (!updated) {
         return { content: [{ type: "text" as const, text: `No annotation with id ${id}` }] };
       }
@@ -318,7 +348,177 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     },
   );
 
+  // ---------------------------------------------------------------------------
+  // Resources: the sets, as documents.
+  //
+  // Discovery used to cost a tool call, and a tool costs a line in the agent's
+  // tool list on every turn whether or not it is ever used. `resources/list` is
+  // the protocol's own answer to "what is here", so listing the sets belongs
+  // there instead. Nothing here computes: a resource says what was written, and
+  // says so out loud. Where the code sits now, and whether it drifted, stay on
+  // the tools that read the code.
+  // ---------------------------------------------------------------------------
+
+  server.registerResource(
+    "scopes",
+    SCOPES_URI,
+    {
+      title: "Named sets in this workspace",
+      description:
+        "The list of named sets — a PR under review, a walkthrough of an area — with how many notes each holds and how old it is. Read this to find out what sets exist before asking for one by name.",
+      mimeType: "text/plain",
+    },
+    async (uri) => {
+      await store.reload();
+      return { contents: [{ uri: uri.href, mimeType: "text/plain", text: renderIndex(store.scopes()) }] };
+    },
+  );
+
+  server.registerResource(
+    "scope",
+    new ResourceTemplate(`${SCOPES_URI}/{+scope}`, {
+      // Listing every set here is what makes discovery free: a client asking
+      // `resources/list` gets the sets by name, with no tool call spent.
+      list: async () => {
+        await store.reload();
+        return {
+          resources: store.scopes().map((s) => ({
+            uri: `${SCOPES_URI}/${s.scope}`,
+            name: s.scope,
+            description: `${s.notes} note${s.notes === 1 ? "" : "s"} — ${s.open} open, ${s.finished} finished — opened ${s.openedAt}${age(s.openedAt)}`,
+            mimeType: "text/plain",
+          })),
+        };
+      },
+      complete: {
+        scope: async (value) => {
+          await store.reload();
+          return store
+            .scopes()
+            .map((s) => s.scope)
+            .filter((name) => name.startsWith(value));
+        },
+      },
+    }),
+    {
+      title: "One named set, in its author's order",
+      description:
+        "A set read as a document: its notes in the sequence they were meant to be read. Says where each note was written, not where the code is now — call get_annotations with the same scope for current positions and drift.",
+      mimeType: "text/plain",
+    },
+    async (uri, { scope }) => {
+      await store.reload();
+      const wanted = resolveScopeName(scope, store.scopes());
+      // A set that does not exist is an error, not an empty document. An agent
+      // has to be able to tell "no such set" from "a set with nothing in it",
+      // the same distinction scope_status draws.
+      if (wanted === undefined) {
+        throw new Error(`No set named ${asName(scope)} in this workspace.`);
+      }
+      const entry = store.scopes().find((s) => s.scope === wanted)!;
+      const notes = store.query({ scope: wanted });
+      return {
+        contents: [
+          { uri: uri.href, mimeType: "text/plain", text: renderScopeDocument(entry, notes) },
+        ],
+      };
+    },
+  );
+
   return server;
+}
+
+/** Root of every resource this server serves. */
+const SCOPES_URI = "acciaccatura://scopes";
+
+/**
+ * The scope name a URI asked for, or `undefined` when no set matches.
+ *
+ * A set name may hold a `/` (`pr/142`), which the URI template carries through
+ * as-is — but a client is equally entitled to percent-encode it. Both spellings
+ * name the same set, so both are tried, and a name that genuinely contains a
+ * percent escape still wins on the first pass.
+ */
+function resolveScopeName(
+  raw: string | string[] | undefined,
+  scopes: ReadonlyArray<{ scope: string }>,
+): string | undefined {
+  const name = asName(raw);
+  if (scopes.some((s) => s.scope === name)) return name;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(name);
+  } catch {
+    return undefined; // a broken escape names nothing
+  }
+  return scopes.some((s) => s.scope === decoded) ? decoded : undefined;
+}
+
+/** A template variable as a plain string; the SDK hands back an array for some. */
+function asName(raw: string | string[] | undefined): string {
+  return Array.isArray(raw) ? (raw[0] ?? "") : (raw ?? "");
+}
+
+/** Every named set, with what it holds and how old it is. */
+function renderIndex(scopes: ReadonlyArray<ScopeIndexEntry>): string {
+  if (scopes.length === 0) {
+    return "No named sets in this workspace. A set is created by writing a note with a scope.";
+  }
+  const lines = scopes.map(
+    (s) =>
+      `${s.scope} — ${s.notes} note${s.notes === 1 ? "" : "s"} — ${s.open} open, ${s.finished} finished — opened ${s.openedAt}${age(s.openedAt)}`,
+  );
+  return [
+    "Named sets in this workspace:",
+    "",
+    ...lines,
+    "",
+    `Read one at ${SCOPES_URI}/<name>. For where the code sits now and whether it drifted, call get_annotations or scope_status with the set's name.`,
+  ].join("\n");
+}
+
+/**
+ * One set as a document: its open notes, in the order its author chose.
+ *
+ * Line numbers are labelled as where each note was **written**, never presented
+ * as where the code is. A resource reads no code, so it cannot know whether
+ * those lines still hold — and a position stated without that caveat is the
+ * quiet wrong answer this product exists to avoid.
+ */
+function renderScopeDocument(entry: ScopeIndexEntry, notes: readonly Annotation[]): string {
+  const head = [
+    `${entry.scope} — ${entry.notes} note${entry.notes === 1 ? "" : "s"} — ${entry.open} open, ${entry.finished} finished`,
+    `Opened ${entry.openedAt}${age(entry.openedAt)}, last touched ${entry.lastTouchedAt}`,
+    "",
+    `This is the set as it was written. Positions below are where each note was saved, not where the code is now — call get_annotations with scope "${entry.scope}" for current positions and drift.`,
+    "",
+  ];
+
+  if (notes.length === 0) {
+    // Every note finished is a real state with a real meaning: the work this
+    // set was written for is over. Saying "no notes" would read as an empty set.
+    head.push(
+      entry.finished > 0
+        ? "Every note in this set is finished. Nothing is left to read."
+        : "No open notes in this set.",
+    );
+    return head.join("\n");
+  }
+
+  const steps = notes.map((a, i) => {
+    const place = a.order === undefined ? `${i + 1}.` : `${a.order}.`;
+    return [
+      `${place} ${a.anchor.file} (written at ${a.anchor.startLine}-${a.anchor.endLine}) [${a.provenance}/${a.trust}]`,
+      a.body,
+    ].join("\n");
+  });
+
+  if (entry.finished > 0) {
+    const one = entry.finished === 1;
+    head.push(`${entry.finished} finished note${one ? " is" : "s are"} not listed.`, "");
+  }
+  return [...head, steps.join("\n\n")].join("\n");
 }
 
 /** " (N days ago)", or "" for something opened today. Age is a hint, not a rule. */
