@@ -520,11 +520,18 @@ describe("MCP server integration", () => {
 
       // Line numbers without the text they point at cannot be hashed, and a
       // note anchored on a guess is the failure this product exists to avoid.
+      // A body goes along too, or the empty-change guard answers instead and
+      // this passes without the anchor ever being checked.
       const bad = await client.callTool({
         name: "update_annotation",
-        arguments: { id, startLine: 4, endLine: 4 },
+        arguments: { id, body: "a real change", startLine: 4, endLine: 4 },
       });
       expect((bad as { isError?: boolean }).isError).toBe(true);
+      expect(textOf(bad as never)).toMatch(/snapshot/i);
+
+      // And it must not have half-applied the body while refusing the anchor.
+      const editor2 = await editorStore();
+      expect(editor2.get(id)?.body).toBe("a note");
     });
 
     it("tells an agent to re-read the code before repairing an anchor", async () => {
