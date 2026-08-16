@@ -146,6 +146,39 @@ So: **procedures ship as MCP prompts**, which every MCP client can list and use.
 A skill may wrap them for nicer ergonomics on one client. The skill is a
 convenience layer; the prompt is the source of truth.
 
+**Built** — three, each taking a `scope`:
+
+| prompt | for |
+|---|---|
+| `review_change` | a set holding the notes for one change under review |
+| `onboarding_tour` | a standing walkthrough of an area |
+| `repair_set` | a set `scope_status` reports as drifted or gone |
+
+Four rules they all follow, and each is a thing that would have been easy to get
+wrong:
+
+- **They say the code wins.** Every one opens by saying the notes are hints, not
+  instructions, and that where a note and the code disagree the note is what is
+  wrong. A procedure is where an agent learns how to treat a note, so leaving
+  that out would teach it to act on a stale one.
+- **They send the agent through the tools, and paste nothing in.** A prompt that
+  copied the notes into its message would hand over a snapshot that stopped
+  being true when it was written, with no drift in it. The message says which
+  tool to call and in what order; the answers come back live.
+- **They will not end a set on their own.** `review_change` says not to close —
+  closing means the change merged, which is the author's call. `onboarding_tour`
+  says not to close and not to finish the notes: a standing walkthrough is meant
+  to outlive any one reading, and an agent that "completed" it would take it
+  away from the next person.
+- **Repair re-points, and never on a guess.** `repair_set` sends a drifted note
+  to `update_annotation` with all four anchor fields, so the note keeps its id
+  and its place. It says outright that a note moved onto code that merely looks
+  similar is worse than a note that says loudly it cannot be placed.
+
+Asking for a set that does not exist is an error that **names the sets that do**,
+so a typo is a one-step fix rather than a guess. Set names complete from the
+store, in prompt arguments as well as in the resource template.
+
 There is a second temptation worth naming. Because the store is committed and
 human-readable JSON, an agent with file access can simply read
 `.acciaccatura/scopes/*.json` — and a skill could just say so. That reads the
