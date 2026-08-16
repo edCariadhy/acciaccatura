@@ -51,8 +51,8 @@ The foundational architecture is in place and the critical paths are working and
 
 ### Phase 4: Scopes — the next trajectory
 *A named set of notes, with an order and a lifetime of its own. Decided in [standards/scopes.md](standards/scopes.md); it is what makes PR review and onboarding expressible.*
-- [ ] **`scope` and `order` on a note:** additive fields. Absent scope stays a plain working note.
-- [ ] **Scope-filtered read:** `get_annotations(scope)` returns a set in its order — the same call whether the caller wants a file's notes or a tour.
+- [x] **`scope` and `order` on a note:** additive fields. Absent scope stays a plain working note, and a store written before this reads as belonging to no set.
+- [x] **Scope-filtered read:** `get_annotations(scope)` returns a set in its order — the same call whether the caller wants a file's notes or a tour. A set read is bounded at 20 rather than 3, and asking for neither a file nor a scope is an error, not a full dump.
 - [ ] **Shard by scope:** one file per scope, replacing the per-source-file plan. Reads the old single file, never breaks on it.
 - [ ] **Close a scope:** finish every note in one call, for a merged PR. Agents may close; only people delete.
 - [ ] **Staleness rollup:** counts of aligned / drifted / gone per scope, plus age. Counts, never a score.

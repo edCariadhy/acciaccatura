@@ -212,4 +212,90 @@ describe("MCP server integration", () => {
     });
     expect((bad as { isError?: boolean }).isError).toBe(true);
   });
+
+  describe("named sets", () => {
+    /** Write note `order` of `scope` onto one line of the fixture. */
+    async function addTo(scope: string, order: number, body: string) {
+      return client.callTool({
+        name: "annotate_code",
+        arguments: {
+          file: "src/math.ts",
+          startLine: 2,
+          endLine: 2,
+          snapshot: "  return a + b;",
+          body,
+          scope,
+          order,
+        },
+      });
+    }
+
+    it("takes a set and a place in it when writing a note", async () => {
+      await addTo("pr/142", 1, "check the boundary first");
+
+      const editor = await editorStore();
+      const [saved] = editor.all();
+      expect(saved?.scope).toBe("pr/142");
+      expect(saved?.order).toBe(1);
+    });
+
+    it("reads a set back in the order its author chose", async () => {
+      await addTo("pr/142", 2, "then the handler");
+      await addTo("pr/142", 1, "read the migration first");
+
+      const got = await client.callTool({
+        name: "get_annotations",
+        arguments: { scope: "pr/142" },
+      });
+      const text = textOf(got as never);
+      expect(text.indexOf("read the migration first")).toBeLessThan(text.indexOf("then the handler"));
+    });
+
+    it("does not hand back notes from another set", async () => {
+      await addTo("pr/142", 1, "only in the pull request");
+      await addTo("onboarding/billing", 1, "only in the tour");
+
+      const got = await client.callTool({ name: "get_annotations", arguments: { scope: "pr/142" } });
+      expect(textOf(got as never)).toContain("only in the pull request");
+      expect(textOf(got as never)).not.toContain("only in the tour");
+    });
+
+    it("tells the agent which set a note is in, and where in it", async () => {
+      await addTo("pr/142", 1, "check the boundary first");
+
+      const got = await client.callTool({ name: "get_annotations", arguments: { scope: "pr/142" } });
+      expect(textOf(got as never)).toMatch(/pr\/142/);
+    });
+
+    it("leaves a note in no set when the agent names none", async () => {
+      await client.callTool({
+        name: "annotate_code",
+        arguments: {
+          file: "src/math.ts",
+          startLine: 2,
+          endLine: 2,
+          snapshot: "  return a + b;",
+          body: "a plain working note",
+        },
+      });
+
+      const editor = await editorStore();
+      expect(editor.all()[0]?.scope).toBeUndefined();
+    });
+
+    it("refuses a read that names neither a file nor a set", async () => {
+      // There must be no way to ask for everything: that is what the result
+      // bound exists to prevent, and an empty argument list must not be it.
+      const bad = await client.callTool({ name: "get_annotations", arguments: {} });
+      expect((bad as { isError?: boolean }).isError).toBe(true);
+    });
+
+    it("says when to reach for a set, not only that sets exist", async () => {
+      const { tools } = await client.listTools();
+      const get = tools.find((t) => t.name === "get_annotations");
+      expect(get?.description ?? "").toMatch(/scope/i);
+      const annotate = tools.find((t) => t.name === "annotate_code");
+      expect(annotate?.description ?? "").toMatch(/scope/i);
+    });
+  });
 });
