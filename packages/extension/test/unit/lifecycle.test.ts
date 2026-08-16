@@ -6,7 +6,12 @@ import { AnnotationStore } from "@acciaccatura/core";
 import type { Annotation, NewAnnotation } from "@acciaccatura/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearFinishedNotes, markNoteDone, reopenNote } from "../../src/lifecycle.js";
+import {
+  clearFinishedNotes,
+  markNoteDone,
+  reopenNote,
+  showNoteAges,
+} from "../../src/lifecycle.js";
 
 function draft(body: string): NewAnnotation {
   return {
@@ -145,9 +150,25 @@ describe("clearFinishedNotes", () => {
     const removed = await clearFinishedNotes(d);
 
     expect(removed).toBe(1);
-    expect(d.confirmDelete).toHaveBeenCalledWith(1);
+    expect(d.confirmDelete).toHaveBeenCalledWith(
+      expect.stringContaining("Delete 1 finished note?"),
+    );
     expect(store.get(open.id)).toBeDefined();
     expect(store.get(done.id)).toBeUndefined();
+  });
+
+  it("says how old the notes are, so the count is not the only thing on offer", async () => {
+    const done = await store.add(draft("finished"));
+    await store.resolve(done.id, "human");
+    const d = deps();
+
+    await clearFinishedNotes(d);
+
+    // A count alone cannot tell "finished this morning" from "finished in June",
+    // and this is the one flow that cannot be undone.
+    const question = vi.mocked(d.confirmDelete).mock.calls[0]?.[0] ?? "";
+    expect(question).toMatch(/1 today/);
+    expect(question).toMatch(/cannot be undone/);
   });
 
   it("deletes nothing when the user says no", async () => {
@@ -165,5 +186,46 @@ describe("clearFinishedNotes", () => {
 
     expect(await clearFinishedNotes(d)).toBe(0);
     expect(d.confirmDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe("showNoteAges", () => {
+  it("counts open and finished notes apart", async () => {
+    await store.add(draft("still open"));
+    await store.add(draft("also open"));
+    const done = await store.add(draft("finished"));
+    await store.resolve(done.id, "human");
+    const d = deps();
+
+    const summary = await showNoteAges(d);
+
+    // Only the finished half is what a delete would take, so the two counts
+    // must never be run together.
+    expect(summary).toMatch(/2 open/);
+    expect(summary).toMatch(/1 finished/);
+    expect(d.notify).toHaveBeenCalledWith("info", summary);
+  });
+
+  it("says so plainly when there is nothing to carry", async () => {
+    expect(await showNoteAges(deps())).toBe("No notes in this workspace.");
+  });
+
+  it("writes nothing to the store", async () => {
+    const note = await store.add(draft("still open"));
+    const before = store.get(note.id)?.updatedAt;
+
+    await showNoteAges(deps());
+
+    // Reporting is a read. A report that touched timestamps would age the very
+    // notes it was asked to describe.
+    expect(store.get(note.id)?.updatedAt).toBe(before);
+  });
+
+  it("picks up a note an agent wrote since the sidebar last drew", async () => {
+    const other = new AnnotationStore(join(dir, ".acciaccatura", "annotations.json"));
+    await other.load();
+    await other.add(draft("written by someone else"));
+
+    expect(await showNoteAges(deps())).toMatch(/1 open/);
   });
 });

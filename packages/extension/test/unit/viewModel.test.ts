@@ -1,7 +1,16 @@
-import type { Annotation, NoteLines, ScopeIndexEntry, ScopeReport } from "@acciaccatura/core";
+import type {
+  AgeBreakdown,
+  Annotation,
+  NoteLines,
+  ScopeIndexEntry,
+  ScopeReport,
+} from "@acciaccatura/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  ageSplit,
+  describeAgeGroup,
+  describeAges,
   filesWithNotes,
   gutterMarks,
   noteView,
@@ -293,5 +302,98 @@ describe("a check that no longer describes the set", () => {
 
   it("still marks that set as done", () => {
     expect(scopeView(entry({ open: 0, finished: 3 }), report({ gone: 1 })).icon).toBe("check");
+  });
+});
+
+describe("age, said in one line", () => {
+  const NOW = new Date("2026-08-16T12:00:00.000Z");
+  const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000).toISOString();
+
+  /** A breakdown of `total` notes whose earliest is `oldestAt`. */
+  function aged(total: number, oldestAt: string): AgeBreakdown {
+    return { ...breakdown([total]), total, oldestAt };
+  }
+
+  /** A breakdown with the given counts, in bucket order. */
+  function breakdown(counts: number[], undated = 0): AgeBreakdown {
+    const labels = ["today", "1-6 days", "7-29 days", "30+ days"];
+    const buckets = labels.map((label, i) => ({
+      fromDays: i,
+      label,
+      count: counts[i] ?? 0,
+    }));
+    const total = counts.reduce((a, b) => a + b, 0) + undated;
+    return { total, buckets, undated };
+  }
+
+  it("leaves out the buckets that are empty", () => {
+    // A reader deciding what to delete needs the numbers that are not zero.
+    // "2 today, 0 1-6 days, 0 7-29 days, 4 30+ days" buries them.
+    expect(ageSplit(breakdown([2, 0, 0, 4]))).toBe("2 today, 4 30+ days");
+  });
+
+  it("keeps the buckets in oldest-last order, so the split reads as a scale", () => {
+    expect(ageSplit(breakdown([1, 1, 1, 1]))).toBe("1 today, 1 1-6 days, 1 7-29 days, 1 30+ days");
+  });
+
+  it("says out loud when a date could not be read", () => {
+    // Silently dropping it would leave a split that does not add up to the
+    // total, with nothing to say why.
+    expect(ageSplit(breakdown([1], 2))).toBe("1 today, 2 with no readable date");
+  });
+
+  it("gives the oldest age, not the whole split", () => {
+    // Spelled out in full this ran to 125 characters and the message bar cut it
+    // — with "1 30+ days", the number that mattered, in the part that got cut.
+    const line = describeAges(
+      { open: aged(6, daysAgo(52)), finished: aged(2, daysAgo(41)) },
+      NOW,
+    );
+    expect(line).toMatch(/6 open \(oldest 52 days\)/);
+    expect(line).toMatch(/2 finished \(oldest 41 days\)/);
+    expect(line).not.toMatch(/30\+ days/);
+  });
+
+  it("puts open work first, so a cut-off line loses the least important half", () => {
+    // The message bar truncates and its width is not ours to pick, so the order
+    // is the defence. Open notes are what the workspace is still carrying;
+    // finished ones are only waiting to be deleted.
+    const line = describeAges(
+      { open: aged(6, daysAgo(52)), finished: aged(2, daysAgo(41)) },
+      NOW,
+    );
+    expect(line.indexOf("open")).toBeLessThan(line.indexOf("finished"));
+    // And no lead-in word before it, which would cost the same room for nothing.
+    expect(line.startsWith("6 open")).toBe(true);
+  });
+
+  it("says nothing about age when nothing is older than a day", () => {
+    // "oldest 0 days" is a word count, not information.
+    const line = describeAges({ open: aged(3, daysAgo(0)), finished: breakdown([]) }, NOW);
+    expect(line).toMatch(/^3 open,/);
+    expect(line).not.toMatch(/oldest/);
+  });
+
+  it("counts one day as a day, not as days", () => {
+    expect(describeAgeGroup(aged(1, daysAgo(1)), "open", NOW)).toBe("1 open (oldest 1 day)");
+  });
+
+  it("names the empty half instead of showing it as a zero", () => {
+    const line = describeAges({ open: aged(3, daysAgo(2)), finished: breakdown([]) }, NOW);
+    expect(line).toMatch(/3 open/);
+    expect(line).toMatch(/no finished notes/);
+    expect(line).not.toMatch(/0 finished/);
+  });
+
+  it("still reports notes it could not age, which have no oldest date at all", () => {
+    // Otherwise a workspace of nothing but unreadable dates reads as a
+    // workspace with nothing old in it.
+    expect(describeAgeGroup(breakdown([], 2), "open", NOW)).toBe("2 open (2 with no date)");
+  });
+
+  it("says nothing is being carried when nothing is", () => {
+    expect(describeAges({ open: breakdown([]), finished: breakdown([]) }, NOW)).toBe(
+      "No notes in this workspace.",
+    );
   });
 });

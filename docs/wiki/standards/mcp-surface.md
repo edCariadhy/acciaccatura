@@ -68,6 +68,22 @@ Read, write, repair, end, delete, judge — one verb each, no synonyms.
 Six is not a target to grow into. Every tool is a line in the agent's tool list
 on every turn, so the next addition has to clear the same bar these did.
 
+### Age reporting stayed off the surface — 2026-08-16
+
+Reporting how old notes are looked like a seventh tool and is not one. The
+question it answers — *what is this workspace carrying, and what would a delete
+take* — leads to `sweepResolved`, and deleting is a person's decision that no
+agent may take. A tool an agent can call but never act on is a line of tool list
+bought for nothing.
+
+What an agent can act on is narrower, so that is all it got: `get_annotations`
+already returns a note, and now says how many days it has been open once it is
+older than a day. Notes are working notes, so an old one is likelier to describe
+work that has already moved on — which is the kind of thing that changes how
+much weight an agent gives it. No new tool, no new argument, a few tokens on a
+line already being paid for. The full report belongs to the person about to
+sweep, and lives in the editor.
+
 ## 3. Procedures do not live in a skill
 
 A skill is one vendor's format. The product's whole reason to exist is

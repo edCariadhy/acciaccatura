@@ -1,4 +1,7 @@
+import { reportAge } from "@acciaccatura/core";
 import type { Annotation, AnnotationStore } from "@acciaccatura/core";
+
+import { ageSplit, describeAges } from "./viewModel.js";
 
 /**
  * Dependencies the finish-a-note flows need, injected so they are testable
@@ -10,8 +13,12 @@ export interface LifecycleDeps {
   store: AnnotationStore;
   /** Ask which note to act on; `undefined` means the user backed out. */
   chooseNote: (candidates: readonly Annotation[]) => Promise<Annotation | undefined>;
-  /** Ask before deleting notes for good; `false` means stop. */
-  confirmDelete: (count: number) => Promise<boolean>;
+  /**
+   * Ask before deleting notes for good; `false` means stop. The question is
+   * composed here rather than by the caller, so what the user is told matches
+   * what the sweep will take.
+   */
+  confirmDelete: (question: string) => Promise<boolean>;
   /** Surface a message to the user. */
   notify: (level: "info" | "warn", message: string) => void;
 }
@@ -71,11 +78,32 @@ export async function clearFinishedNotes(deps: LifecycleDeps): Promise<number> {
     deps.notify("info", "No finished notes to delete.");
     return 0;
   }
-  if (!(await deps.confirmDelete(finished.length))) return 0;
+
+  // Say how old they are, not just how many. A count alone gives no way to
+  // tell "six things I finished this morning" from "six things nobody has
+  // looked at since June", and this cannot be undone.
+  const split = ageSplit(reportAge(finished, cutoff).finished);
+  const question = `Delete ${finished.length} finished note${finished.length === 1 ? "" : "s"}? ${split}. This cannot be undone.`;
+  if (!(await deps.confirmDelete(question))) return 0;
 
   const removed = await deps.store.sweepResolved({ resolvedBefore: cutoff });
   deps.notify("info", `Deleted ${removed} finished ${removed === 1 ? "note" : "notes"}.`);
   return removed;
+}
+
+/**
+ * Say what this workspace is carrying: how many notes are open and how long
+ * they have waited, and how many are finished and waiting to be deleted.
+ *
+ * Notes are working notes, so a store that keeps filling up is worth seeing
+ * before deciding anything. Reads metadata only — no code, no files — so it is
+ * cheap enough to run whenever someone asks.
+ */
+export async function showNoteAges(deps: LifecycleDeps): Promise<string> {
+  await deps.store.reload();
+  const summary = describeAges(reportAge(deps.store.all()));
+  deps.notify("info", summary);
+  return summary;
 }
 
 /** The note to act on: the one already picked, or one the user chooses. */
