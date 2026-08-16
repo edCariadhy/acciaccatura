@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
+import { indexScopes } from "./scope.js";
+import type { ScopeIndexEntry } from "./scope.js";
 import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel } from "./types.js";
 
 /**
@@ -324,6 +326,17 @@ export class AnnotationStore {
           .map((r) => r.a);
 
     return ordered.slice(0, Math.max(0, limit));
+  }
+
+  /**
+   * Summarise every named set: counts and dates, no file reads. A workspace may
+   * hold many sets, so the listing has to stay cheap; checking whether one set
+   * still matches the code is a separate, per-set cost. See
+   * {@link reportScope}.
+   */
+  scopes(): ScopeIndexEntry[] {
+    this.#ensureLoaded();
+    return indexScopes(this.#data.annotations);
   }
 
   /** Every annotation, unranked and unbounded. For tooling/tests, not agents. */

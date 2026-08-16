@@ -55,7 +55,7 @@ The foundational architecture is in place and the critical paths are working and
 - [x] **Scope-filtered read:** `get_annotations(scope)` returns a set in its order — the same call whether the caller wants a file's notes or a tour. A set read is bounded at 20 rather than 3, and asking for neither a file nor a scope is an error, not a full dump.
 - [ ] **Shard by scope:** one file per scope, replacing the per-source-file plan. Reads the old single file, never breaks on it.
 - [x] **Close a scope:** `resolveScope` finishes every open note in one call, for a merged PR, and reports how many. Closing twice is safe — the first answer stands. Over MCP it is a `scope` argument on `resolve_annotation`, not a new tool. Agents may close; only people delete.
-- [ ] **Staleness rollup:** counts of aligned / drifted / gone per scope, plus age. Counts, never a score.
+- [x] **Staleness rollup:** `store.scopes()` lists every set from memory with no file reads; `reportScope` checks one set and counts its open notes as aligned / drifted / gone. Counts, never a score. Over MCP both are `scope_status`, with and without a `scope` argument. A set that does not exist reports as absent, not as a set with nothing wrong.
 
 ### Phase 5: The surface, in the right primitives
 *MCP has tools, resources and prompts; we ship only tools. See [standards/mcp-surface.md](standards/mcp-surface.md).*
