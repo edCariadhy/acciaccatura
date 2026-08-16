@@ -86,6 +86,22 @@ describe("AnnotationStore", () => {
     expect(top?.id).not.toBe(far.id);
   });
 
+  it("breaks a tie between equally relevant notes toward the most recently updated", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    // Same distance from the query line, so only the tie-break separates them.
+    const older = await store.add(draft({ anchor: { file: "src/a.ts", startLine: 5, endLine: 5, snapshot: "older" } }));
+    const newer = await store.add(draft({ anchor: { file: "src/a.ts", startLine: 15, endLine: 15, snapshot: "newer" } }));
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(newer.updatedAt) + 5000));
+    await store.update(newer.id, { body: "touched most recently" });
+    vi.useRealTimers();
+
+    const ranked = store.query({ file: "src/a.ts", line: 10, limit: 2 });
+    expect(ranked.map((a) => a.id)).toEqual([newer.id, older.id]);
+  });
+
   it("removes annotations idempotently", async () => {
     const store = new AnnotationStore(storePath);
     await store.load();
@@ -494,6 +510,20 @@ describe("AnnotationStore", () => {
 
       const tour = store.query({ scope: "pr/142" });
       expect(tour.map((a) => a.order)).toEqual([1, 2, 3]);
+    });
+
+    it("keeps two notes given the same place in a steady order", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      // An author can give two notes the same number. The set must still read
+      // the same way every time, so oldest-first decides it.
+      const first = await store.add(inScope("pr/142", 1, "src/one.ts"));
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(Date.parse(first.createdAt) + 5000));
+      const second = await store.add(inScope("pr/142", 1, "src/two.ts"));
+      vi.useRealTimers();
+
+      expect(store.query({ scope: "pr/142" }).map((a) => a.id)).toEqual([first.id, second.id]);
     });
 
     it("puts notes with no place in the sequence after the ordered ones", async () => {
