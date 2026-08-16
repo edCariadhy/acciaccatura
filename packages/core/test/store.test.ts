@@ -581,6 +581,88 @@ describe("AnnotationStore", () => {
       expect(() => store.query({} as never)).toThrow(/file|scope/i);
     });
 
+    describe("repairing a note in a set", () => {
+      it("re-sequences a note without touching anything else", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("onboarding/billing", 3));
+
+        const moved = await store.update(note.id, { order: 1 });
+        expect(moved?.order).toBe(1);
+        expect(moved?.scope).toBe("onboarding/billing");
+        expect(moved?.id).toBe(note.id);
+        expect(moved?.body).toBe(note.body);
+      });
+
+      it("moves a note to another set, keeping its id", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("pr/142", 1));
+
+        const moved = await store.update(note.id, { scope: "onboarding/billing", order: 4 });
+        expect(moved?.id).toBe(note.id);
+        expect(store.query({ scope: "pr/142" })).toHaveLength(0);
+        expect(store.query({ scope: "onboarding/billing" })).toHaveLength(1);
+      });
+
+      it("takes a note out of its set when the scope is cleared", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("pr/142", 1));
+
+        // Absent is what "in no set" means, so clearing has to drop the field
+        // rather than leave an empty string behind.
+        const loose = await store.update(note.id, { scope: null });
+        expect(loose?.scope).toBeUndefined();
+        expect(store.scopes()).toEqual([]);
+      });
+
+      it("clears a note's place in the sequence without removing it from the set", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("pr/142", 2));
+
+        const loose = await store.update(note.id, { order: null });
+        expect(loose?.order).toBeUndefined();
+        expect(loose?.scope).toBe("pr/142");
+      });
+
+      it("leaves the set alone when an update does not mention it", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(inScope("pr/142", 2));
+
+        const edited = await store.update(note.id, { body: "a better explanation" });
+        expect(edited?.scope).toBe("pr/142");
+        expect(edited?.order).toBe(2);
+      });
+
+      it("re-points a drifted note at where its code went, and it reads aligned again", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const note = await store.add(
+          draft({
+            scope: "onboarding/billing",
+            order: 1,
+            anchor: { file: "src/pay.ts", startLine: 2, endLine: 2, snapshot: "  return a * 2;" },
+          }),
+        );
+
+        // The repair is a fresh capture, not a guess: the caller passes the text
+        // as it is now, and the hash is re-derived from it.
+        const repaired = await store.update(note.id, {
+          anchor: { file: "src/pay.ts", startLine: 9, endLine: 9, snapshot: "  return a * 3;" },
+        });
+
+        expect(repaired?.id).toBe(note.id);
+        expect(repaired?.anchor.startLine).toBe(9);
+        expect(repaired?.anchor.snapshotHash).not.toBe(note.anchor.snapshotHash);
+        // Repairing must not quietly finish or unscope the note.
+        expect(repaired?.scope).toBe("onboarding/billing");
+        expect(repaired?.resolvedAt).toBeUndefined();
+      });
+    });
+
     describe("closing a set", () => {
       it("finishes every open note in the set, and says how many", async () => {
         const store = new AnnotationStore(storePath);

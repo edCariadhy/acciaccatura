@@ -59,7 +59,7 @@ The foundational architecture is in place and the critical paths are working and
 
 ### Phase 5: The surface, in the right primitives
 *MCP has tools, resources and prompts; we ship only tools. See [standards/mcp-surface.md](standards/mcp-surface.md).*
-- [ ] **`update_annotation`:** repair a note's body or anchor without reissuing its id. The one genuinely missing verb — today an agent can only add, finish and delete, so it cannot fix a stale tour.
+- [x] **`update_annotation`:** repairs a note's body, anchor, trust or place in a set without reissuing its id. Taken before sharding because the staleness rollup shipped detection with no remedy: an agent could see `1 drifted` and had no verb to fix it. A re-anchor needs all four anchor fields together, and a call that changes nothing is refused rather than reported as a repair.
 - [ ] **Scopes as resources:** the scope list and each scope as readable documents, so discovery costs no tool slot.
 - [ ] **Procedures as prompts:** review-in-order, onboarding tour, stale-scope triage. Prompts, not a Claude-only skill, or non-Claude agents lose the workflow.
 
