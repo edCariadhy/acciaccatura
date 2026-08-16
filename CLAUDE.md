@@ -51,8 +51,8 @@ wiki — it would bypass review). Change the doc for a thing in the same PR as t
 
 Write PR text, commits, docs, comments and user-facing strings at **B2 English**. Code
 names are judged differently — short and stating intent, never rewritten to hit a reading
-level. The rule, the word swaps, and the two stored names that may not be renamed in place
-are in
+level. `provenance` and the trust values keep their names for good. The rule and the word
+swaps are in
 [docs/wiki/standards/engineering-principles.md](docs/wiki/standards/engineering-principles.md).
 
 `npm test` needs no prior build: the in-repo vitest configs alias `@acciaccatura/core`

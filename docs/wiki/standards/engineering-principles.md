@@ -58,12 +58,14 @@ a name to hit a vocabulary level, and do not churn names that already read well 
 a rename costs every reader who knew the old one. Rename only when the name is
 genuinely unclear about what the thing is for.
 
-Two names are already written to disk and read by agents over MCP:
-`provenance`, and the trust values `authoritative` / `suggested` /
-`unverified`. Those do **not** get renamed in place — see
-[stable-contracts.md](stable-contracts.md). We add the plainer name, write both
-for a while, and mark the old one as out of date, in the same pass that changes
-the file layout.
+`provenance` and the trust values `authoritative` / `suggested` / `unverified`
+**stay as they are** — decided 2026-08-16. They are written to disk and read by
+agents over MCP, they say exactly what they mean, and carrying a second name for
+them would cost every reader and every stored file while buying nothing. They are
+part of the product's vocabulary now.
+
+Prose is still prose: when a wiki page or a message to a user explains one of
+them, write "who wrote it" rather than making the reader parse the field name.
 
 ## Prefer the boring decision
 
