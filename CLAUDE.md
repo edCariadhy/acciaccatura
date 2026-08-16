@@ -80,13 +80,18 @@ printf '%s\n%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"prot
 Server config via env: `ACCIACCATURA_WORKSPACE` (anchor-resolution root, default cwd) and
 `ACCIACCATURA_STORE` (default `<workspace>/.acciaccatura/annotations.json`).
 
-CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) — a `unit` job (build + typecheck +
-vitest) on every push/PR, and a heavier `e2e` job (real VS Code under xvfb, Linux-only, VS
-Code cached) gated to PRs + a nightly cron, never plain pushes.
+CI: [.github/workflows/ci.yml](.github/workflows/ci.yml) — a `unit` job (`npm audit`, build,
+typecheck + vitest) on every push/PR, and a heavier `e2e` job (real VS Code under xvfb,
+Linux-only, VS Code cached) gated to PRs + a nightly cron, never plain pushes.
 
-Note: `npm audit` reports dev-only advisories in vitest's transitive `esbuild`/`vite`
-(the esbuild dev-server issue) — not in shipped code. The fix is a breaking vitest v4 bump;
-left for a deliberate upgrade, not an incidental one.
+The `unit` job runs `npm audit --omit=dev --audit-level=high` and fails the build on a
+high/critical vulnerability in a **shipped** dependency. Dev-tooling advisories (the
+vitest/vite/esbuild toolchain) are excluded by `--omit=dev`, not just ignored — they're
+tracked separately. The esbuild dev-server issue there is the current example; the fix is
+a breaking vitest v4 bump, left for a deliberate upgrade, not an incidental one.
+[.github/dependabot.yml](.github/dependabot.yml) opens weekly update PRs for npm and the
+Actions pinned in the workflow; Dependabot alerts and malware scanning are on for the repo
+outside of CI.
 
 Lint with ESLint 9 flat config ([eslint.config.mjs](eslint.config.mjs), typescript-eslint):
 `npm run lint` (or `lint:fix`). It's part of the CI `unit` job. There is no Prettier;
