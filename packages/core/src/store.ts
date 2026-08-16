@@ -455,8 +455,12 @@ function byUpdatedDesc(a: Annotation, b: Annotation): number {
  * A set's own sequence: `order` ascending, then oldest first so the run stays
  * put. Notes with no `order` sort last rather than first — the author gave them
  * no place, and a note nobody sequenced should not open the tour.
+ *
+ * Exported because the editor sidebar sorts the same sets. Two copies of this
+ * rule would eventually disagree, and then a tour would read one way for an
+ * agent and another way for the person sitting next to it.
  */
-function bySequence(a: Annotation, b: Annotation): number {
+export function bySequence(a: Annotation, b: Annotation): number {
   const left = a.order ?? Number.POSITIVE_INFINITY;
   const right = b.order ?? Number.POSITIVE_INFINITY;
   if (left !== right) return left - right;

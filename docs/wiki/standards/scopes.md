@@ -147,3 +147,22 @@ hints in the listing, and nothing prunes on its own.
 
 The asymmetry is the point: the blast radius of a wrong close is an undo, and the
 blast radius of a wrong delete is lost work.
+
+## 6. Both writers reach a set
+
+Scopes started agent-only: an agent could read a set, check it and close it over
+MCP, while a person could do none of those. That left **two writers, one store**
+true for notes and false for sets.
+
+The editor now has the same three verbs — **Check Set**, **Close Set**, and
+**Add Note to Set** — and the sidebar lists sets above the files, read in the
+author's order. Two rules the editor has to keep, both learned by running it:
+
+- **A set is never shown as checked until someone checks it.** Checking reads
+  code and the sidebar redraws constantly, so a set with no check reads "not
+  checked" and never "0 drifted". Claiming everything matches before looking is
+  a false answer a reader acts on.
+- **A check is dropped as soon as anything is written.** A check counts only
+  *open* notes, so closing a set — or finishing one note in it — leaves the last
+  check describing notes nobody is reporting on. Stale counts are worse than
+  none.

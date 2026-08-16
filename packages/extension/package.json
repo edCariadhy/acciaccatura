@@ -66,6 +66,21 @@
         "title": "Delete Finished Notes",
         "category": "Acciaccatura",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "acciaccatura.closeScope",
+        "title": "Close Set",
+        "category": "Acciaccatura"
+      },
+      {
+        "command": "acciaccatura.checkScope",
+        "title": "Check Set",
+        "category": "Acciaccatura"
+      },
+      {
+        "command": "acciaccatura.addNoteToScope",
+        "title": "Add Note to Set",
+        "category": "Acciaccatura"
       }
     ],
     "viewsContainers": {
@@ -98,6 +113,10 @@
         {
           "command": "acciaccatura.refreshTree",
           "when": "false"
+        },
+        {
+          "command": "acciaccatura.addNoteToScope",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -128,6 +147,19 @@
         {
           "command": "acciaccatura.reopenAnnotation",
           "when": "view == acciaccatura.annotations && viewItem == resolved"
+        },
+        {
+          "command": "acciaccatura.checkScope",
+          "when": "view == acciaccatura.annotations && viewItem == scope",
+          "group": "inline"
+        },
+        {
+          "command": "acciaccatura.closeScope",
+          "when": "view == acciaccatura.annotations && viewItem == scope"
+        },
+        {
+          "command": "acciaccatura.addNoteToScope",
+          "when": "view == acciaccatura.annotations && viewItem =~ /^(suggested|authoritative)$/"
         }
       ]
     }

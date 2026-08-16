@@ -8,8 +8,11 @@ import { captureAnnotation } from "./capture.js";
 import { clearFinishedNotes, markNoteDone, reopenNote } from "./lifecycle.js";
 import type { LifecycleDeps } from "./lifecycle.js";
 
+import { addNoteToScope, checkScope, closeScope } from "./scopes.js";
+import type { ScopeDeps } from "./scopes.js";
+
 import { DecorationManager, initDecorations } from "./decorations.js";
-import { AnnotationTreeProvider, AnnotationTreeItem } from "./treeView.js";
+import { AnnotationTreeProvider, AnnotationTreeItem, ScopeTreeItem } from "./treeView.js";
 
 /**
  * Entry point for the VS Code extension.
@@ -141,8 +144,14 @@ export function activate(context: vscode.ExtensionContext): void {
           : void vscode.window.showWarningMessage(`Acciaccatura: ${message}`),
     };
 
-  /** Redraw after any change: the sidebar and the gutter both show finished state. */
+  /**
+   * Redraw after any change: the sidebar and the gutter both show finished
+   * state. Cached set checks go too — a write changes what a check would say,
+   * and counts that no longer match the store are worse than none. Switching
+   * files only calls refresh(), so a check survives that.
+   */
   const redraw = async (): Promise<void> => {
+    treeProvider?.clearReports();
     treeProvider?.refresh();
     await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
   };
@@ -170,7 +179,99 @@ export function activate(context: vscode.ExtensionContext): void {
     await redraw();
   });
 
-  context.subscriptions.push(annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished);
+  /** Everything the set-level flows need, wired to the real editor. */
+  const scopeDeps = (): ScopeDeps | undefined => {
+    const root = folders?.[0]?.uri.fsPath;
+    return store && root
+      ? {
+          store,
+          workspaceRoot: root,
+          chooseScope: async (scopes) => {
+            const picked = await vscode.window.showQuickPick(
+              scopes.map((s) => ({
+                label: s.scope,
+                description: `${s.notes} note${s.notes === 1 ? "" : "s"} · ${s.open} open`,
+                detail: `Opened ${s.openedAt}`,
+                scope: s.scope,
+              })),
+              { title: "Acciaccatura", placeHolder: "Which set?" },
+            );
+            return picked?.scope;
+          },
+          chooseNote: async (candidates) => {
+            const picked = await vscode.window.showQuickPick(
+              candidates.map((a) => ({
+                label: a.body.split("\n")[0] ?? "Annotation",
+                description: `${a.anchor.file}:${a.anchor.startLine}-${a.anchor.endLine}`,
+                detail: a.scope ? `already in ${a.scope}` : "in no set",
+                annotation: a,
+              })),
+              { title: "Acciaccatura", placeHolder: "Which note?" },
+            );
+            return picked?.annotation;
+          },
+          askScopeName: async (existing) => {
+            // Offer the names already in use so a workspace does not end up
+            // with pr/142 and pr-142 meaning the same thing.
+            const NEW = "$(add) New set…";
+            const choice =
+              existing.length === 0
+                ? NEW
+                : (
+                    await vscode.window.showQuickPick([...existing, NEW], {
+                      title: "Acciaccatura",
+                      placeHolder: "Which set should this note join?",
+                    })
+                  );
+            if (!choice) return undefined;
+            if (choice !== NEW) return choice;
+            return vscode.window.showInputBox({
+              title: "Acciaccatura",
+              prompt: "Name the set, for example pr/142 or onboarding/billing.",
+              ignoreFocusOut: true,
+            });
+          },
+          confirmClose: async (scope, count) =>
+            (await vscode.window.showInformationMessage(
+              `Close ${scope}? This marks ${count} note${count === 1 ? "" : "s"} as done. You can reopen them one at a time.`,
+              { modal: true },
+              "Close set",
+            )) === "Close set",
+          notify: (level, message) =>
+            level === "info"
+              ? void vscode.window.showInformationMessage(`Acciaccatura: ${message}`)
+              : void vscode.window.showWarningMessage(`Acciaccatura: ${message}`),
+        }
+      : undefined;
+  };
+
+  const closeSet = vscode.commands.registerCommand("acciaccatura.closeScope", async (item?: ScopeTreeItem) => {
+    const deps = scopeDeps();
+    if (!deps) return;
+    await closeScope(deps, item?.scope);
+    await redraw();
+  });
+
+  const checkSet = vscode.commands.registerCommand("acciaccatura.checkScope", async (item?: ScopeTreeItem) => {
+    const deps = scopeDeps();
+    if (!deps) return;
+    const report = await checkScope(deps, item?.scope);
+    // Keep the counts on the row until something changes, so the reader does
+    // not have to hold them in their head.
+    if (report) treeProvider?.setReport(report);
+  });
+
+  const addToSet = vscode.commands.registerCommand("acciaccatura.addNoteToScope", async (item?: AnnotationTreeItem) => {
+    const deps = scopeDeps();
+    if (!deps) return;
+    await addNoteToScope(deps, item?.annotation);
+    await redraw();
+  });
+
+  context.subscriptions.push(
+    annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
+    closeSet, checkSet, addToSet,
+  );
 }
 
 export function deactivate(): void {

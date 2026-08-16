@@ -1,5 +1,5 @@
-import { findNoteLines } from "@acciaccatura/core";
-import type { Annotation, NoteLines } from "@acciaccatura/core";
+import { bySequence, findNoteLines } from "@acciaccatura/core";
+import type { Annotation, NoteLines, ScopeIndexEntry, ScopeReport } from "@acciaccatura/core";
 
 /**
  * What the editor shows, decided without the editor.
@@ -126,4 +126,80 @@ export function gutterMarks(
   }
 
   return marks;
+}
+
+/** The icons a named set can carry, by what most needs attention. */
+export type ScopeIcon = "check" | "error" | "warning" | "list-ordered";
+
+/** What the sidebar shows for one named set. */
+export interface ScopeView {
+  label: string;
+  description: string;
+  tooltip: string;
+  contextValue: "scope";
+  icon: ScopeIcon;
+}
+
+/**
+ * Decide how a named set reads.
+ *
+ * `report` is absent until someone asks for the set to be checked, because
+ * checking reads the code and the sidebar draws far more often than that. When
+ * it is absent we say the set has **not been checked**, rather than showing
+ * "0 drifted" — claiming everything is fine before looking would be a false
+ * answer a reader would act on.
+ */
+export function scopeView(entry: ScopeIndexEntry, report?: ScopeReport): ScopeView {
+  const plural = entry.notes === 1 ? "note" : "notes";
+  const done = entry.open === 0 && entry.notes > 0;
+  // A check only ever counts OPEN notes, so once a set is finished its last
+  // check describes notes nobody is reporting on any more. Keeping those counts
+  // on the row would be a stale answer the reader would act on.
+  const useReport = report && !done;
+
+  const description = useReport
+    ? `${entry.notes} ${plural} · ${report.aligned} aligned, ${report.drifted} drifted, ${report.gone} gone`
+    : done
+      ? `${entry.notes} ${plural} · ${entry.finished} finished`
+      : `${entry.notes} ${plural} · ${entry.open} open`;
+
+  const tooltip = [
+    entry.scope,
+    `${entry.notes} ${plural}: ${entry.open} open, ${entry.finished} finished`,
+    useReport
+      ? `Of the open notes: ${report.aligned} aligned, ${report.drifted} drifted, ${report.gone} gone.`
+      : done
+        ? "Every note in this set is finished. Reopen one to pick the work back up."
+        : "Not checked against the code yet. Run “Check Set” to see what still matches.",
+    `Opened ${entry.openedAt}`,
+  ].join("\n");
+
+  return {
+    label: entry.scope,
+    description,
+    tooltip,
+    contextValue: "scope",
+    // Done first — a set with no open notes is finished, whatever its code did.
+    // Then gone before drifted: a note that cannot be placed at all is worse
+    // than one that merely moved.
+    icon: done
+      ? "check"
+      : useReport && report.gone > 0
+        ? "error"
+        : useReport && report.drifted > 0
+          ? "warning"
+          : "list-ordered",
+  };
+}
+
+/**
+ * Every note in one named set, in the author's sequence, finished ones
+ * included — the sidebar is where a person reviews and reopens them.
+ *
+ * The order comes from core's own comparator on purpose. A second copy of that
+ * rule would drift, and then a tour would read one way for an agent and another
+ * way for the person sitting beside it.
+ */
+export function notesInScope(annotations: readonly Annotation[], scope: string): Annotation[] {
+  return annotations.filter((a) => a.scope === scope).sort(bySequence);
 }
