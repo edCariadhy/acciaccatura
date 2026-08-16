@@ -1,7 +1,14 @@
-import type { Annotation, NoteLines } from "@acciaccatura/core";
+import type { Annotation, NoteLines, ScopeIndexEntry, ScopeReport } from "@acciaccatura/core";
 import { describe, expect, it } from "vitest";
 
-import { filesWithNotes, gutterMarks, noteView, notesForFile } from "../../src/viewModel.js";
+import {
+  filesWithNotes,
+  gutterMarks,
+  noteView,
+  notesForFile,
+  notesInScope,
+  scopeView,
+} from "../../src/viewModel.js";
 
 /**
  * What the editor shows, decided without the editor.
@@ -176,5 +183,115 @@ describe("what the gutter draws", () => {
       TEXT,
     );
     expect(marks[0]?.hover).toMatch(/suggested/);
+  });
+});
+
+function entry(over: Partial<ScopeIndexEntry> = {}): ScopeIndexEntry {
+  return {
+    scope: "pr/142",
+    notes: 3,
+    open: 3,
+    finished: 0,
+    openedAt: "2026-01-01T00:00:00.000Z",
+    lastTouchedAt: "2026-01-02T00:00:00.000Z",
+    ...over,
+  };
+}
+
+function report(over: Partial<ScopeReport> = {}): ScopeReport {
+  return { ...entry(), aligned: 3, drifted: 0, gone: 0, ...over };
+}
+
+describe("how a named set reads in the sidebar", () => {
+  it("names the set and says how much is left in it", () => {
+    const view = scopeView(entry({ notes: 3, open: 2, finished: 1 }));
+    expect(view.label).toBe("pr/142");
+    expect(view.description).toMatch(/3/);
+    expect(view.description).toMatch(/2 open/);
+  });
+
+  it("shows counts, never a single verdict, once the code has been checked", () => {
+    const view = scopeView(entry(), report({ aligned: 1, drifted: 1, gone: 1 }));
+    expect(view.description).toMatch(/1 aligned/);
+    expect(view.description).toMatch(/1 drifted/);
+    expect(view.description).toMatch(/1 gone/);
+    // A made-up score would be an authority we do not have.
+    expect(view.description).not.toMatch(/%|score/i);
+  });
+
+  it("says the set has not been checked yet rather than implying it is fine", () => {
+    // Checking reads code, so it does not happen just because the tree drew.
+    // Claiming "0 drifted" before looking would be a lie the reader would act on.
+    const view = scopeView(entry());
+    expect(view.description).not.toMatch(/aligned|drifted|gone/);
+    expect(view.tooltip).toMatch(/not checked/i);
+  });
+
+  it("marks a set whose work is all finished", () => {
+    expect(scopeView(entry({ open: 0, finished: 3 })).icon).toBe("check");
+  });
+
+  it("warns when notes in the set point at code that moved", () => {
+    expect(scopeView(entry(), report({ aligned: 2, drifted: 1, gone: 0 })).icon).toBe("warning");
+  });
+
+  it("raises an error icon when notes point at code that is gone", () => {
+    // Gone outranks drifted: a note that cannot be placed at all is worse than
+    // one that merely moved.
+    expect(scopeView(entry(), report({ aligned: 1, drifted: 1, gone: 1 })).icon).toBe("error");
+  });
+
+  it("looks ordinary when the set is open and nothing is wrong", () => {
+    expect(scopeView(entry(), report()).icon).toBe("list-ordered");
+    expect(scopeView(entry()).icon).toBe("list-ordered");
+  });
+
+  it("says when the set was opened, so its age can be judged", () => {
+    expect(scopeView(entry()).tooltip).toMatch(/2026-01-01/);
+  });
+
+  it("gives the menus something to key off", () => {
+    expect(scopeView(entry()).contextValue).toBe("scope");
+  });
+});
+
+describe("reading a set in the sidebar", () => {
+  function inSet(scope: string | undefined, order: number | undefined, body: string): Annotation {
+    return note({ scope, order, body });
+  }
+
+  it("reads the set in the order its author chose", () => {
+    const notes = [inSet("pr/142", 3, "third"), inSet("pr/142", 1, "first"), inSet("pr/142", 2, "second")];
+    expect(notesInScope(notes, "pr/142").map((a) => a.body)).toEqual(["first", "second", "third"]);
+  });
+
+  it("puts notes with no place after the ordered ones", () => {
+    const notes = [inSet("pr/142", undefined, "unplaced"), inSet("pr/142", 1, "first")];
+    expect(notesInScope(notes, "pr/142").map((a) => a.body)).toEqual(["first", "unplaced"]);
+  });
+
+  it("leaves out notes from another set, and notes in none", () => {
+    const notes = [inSet("pr/142", 1, "mine"), inSet("other", 1, "theirs"), inSet(undefined, undefined, "loose")];
+    expect(notesInScope(notes, "pr/142").map((a) => a.body)).toEqual(["mine"]);
+  });
+
+  it("keeps finished notes in the set, because a person may still reopen them", () => {
+    const done = note({ scope: "pr/142", order: 1, resolvedAt: "2026-02-01T00:00:00.000Z" });
+    expect(notesInScope([done], "pr/142")).toHaveLength(1);
+  });
+});
+
+describe("a check that no longer describes the set", () => {
+  it("stops showing drift counts once every note is finished", () => {
+    // reportScope only counts OPEN notes, so once a set is closed its last
+    // check describes notes that are no longer being reported on. Showing
+    // "1 gone" for a finished set would be a stale answer a reader acts on.
+    const view = scopeView(entry({ open: 0, finished: 3 }), report({ aligned: 2, drifted: 0, gone: 1 }));
+    expect(view.description).not.toMatch(/aligned|drifted|gone/);
+    expect(view.description).toMatch(/3 finished|all done/i);
+  });
+
+  it("still marks that set as done", () => {
+    expect(scopeView(entry({ open: 0, finished: 3 }), report({ gone: 1 })).icon).toBe("check");
   });
 });
