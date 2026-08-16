@@ -86,12 +86,21 @@ Linux-only, VS Code cached) gated to PRs + a nightly cron, never plain pushes.
 
 The `unit` job runs `npm audit --omit=dev --audit-level=high` and fails the build on a
 high/critical vulnerability in a **shipped** dependency. Dev-tooling advisories (the
-vitest/vite/esbuild toolchain) are excluded by `--omit=dev`, not just ignored — they're
-tracked separately. The esbuild dev-server issue there is the current example; the fix is
-a breaking vitest v4 bump, left for a deliberate upgrade, not an incidental one.
-[.github/dependabot.yml](.github/dependabot.yml) opens weekly update PRs for npm and the
-Actions pinned in the workflow; Dependabot alerts and malware scanning are on for the repo
-outside of CI.
+vitest/vite/esbuild toolchain) are excluded by `--omit=dev`, not just ignored — a full
+`npm audit` (no `--omit`) is expected to report 0 today; if it doesn't, the tree has
+drifted and needs a look. `vitest` is pinned to `^3.2.7` (not v4 — v4 pulls in `obug`, a
+package this npm/Node combo cannot resolve reliably in this workspace; revisit once that
+settles). Root `package.json` carries `overrides` for `serialize-javascript` and `diff`:
+`mocha` (bundled inside `@vscode/test-cli`) still declares vulnerable ranges for both even
+at its latest release, so a plain version bump can't reach the fix — the override forces
+it. [.github/dependabot.yml](.github/dependabot.yml) opens weekly update PRs for npm and
+the Actions pinned in the workflow; Dependabot alerts and malware scanning are on for the
+repo outside of CI.
+
+If you touch these dependency ranges, `rm -rf node_modules package-lock.json
+packages/*/node_modules` before `npm install` — a plain `rm -rf node_modules` at the root
+misses per-package `node_modules` that npm workspaces sometimes creates, and a stale nested
+copy there will silently outlive a "clean" reinstall.
 
 Lint with ESLint 9 flat config ([eslint.config.mjs](eslint.config.mjs), typescript-eslint):
 `npm run lint` (or `lint:fix`). It's part of the CI `unit` job. There is no Prettier;
