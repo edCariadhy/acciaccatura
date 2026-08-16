@@ -4,6 +4,53 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — Scopes: named sets of notes, and a smaller MCP surface
+
+Decided, not yet built. Two real uses drove it: a **PR scope**, where the writer
+leaves notes on a change and the reviewer's agent reads them in order, then the
+set dies at merge; and an **onboarding scope**, a standing tour across many files
+that a newcomer and their agent walk together. Neither fits "notes anchored to a
+file and line", because both need a *named set with an order and a lifetime of
+its own*. Written up in [standards/scopes.md](standards/scopes.md).
+
+- **A scope is written down, not computed.** Sequence is the value — "review the
+  migration before the handler" — and ranking cannot produce sequence.
+- **Lifetime belongs to the scope.** Ephemeral sets are closed at merge and swept;
+  standing sets are maintained. This narrowly amends "short-lived by default": a
+  single long-lived note is still better as a code comment, but a comment cannot
+  say "read this third".
+- **Shard by scope, not by source file.** The per-source-file plan was justified
+  by write cost that no longer exists — measured now at 1.9 ms to load a 2,000-note
+  store and 0.02 ms per query. A scope, by contrast, is the unit you hand over,
+  end and review.
+- **Staleness is reported, never scored.** Counts of aligned / drifted / gone per
+  scope, plus age. A single confidence number would be a made-up authority.
+- **Agents close, people delete.** A wrong close is an undo; a wrong delete is
+  lost work.
+
+The surface gets *smaller*, not bigger, written up in
+[standards/mcp-surface.md](standards/mcp-surface.md). Scopes are a parameter on
+tools we already have, not new verbs, so only one new tool survives:
+`update_annotation`, which repairs a note without reissuing its id — today an
+agent can add, finish and delete, but cannot fix a stale tour. Documents become
+MCP **resources** and procedures become MCP **prompts**; we had been using one of
+MCP's three primitives and making every idea look like a tool. Procedures stay on
+the protocol rather than in a Claude-only skill, because IDE-agnostic delivery is
+the whole differentiator.
+
+Two corrections came out of checking rather than recalling:
+
+- **`.acciaccatura/` is committed by default.** The product ships no `.gitignore`
+  and writes none, so a user's notes are in git unless they say otherwise. Pages
+  here claimed the opposite — that was this repo's own dev `.gitignore` described
+  as product behaviour. It is now a stated decision, and it is what makes the PR
+  case work: the notes arrive with the diff.
+- **Vector search is parked with numbers, not vetoed by taste.** Brute force over
+  20,000 notes is ~12 ms and ~29 MB, four orders of magnitude short of where an
+  index pays; the real cost is a ~23 MB embedding model on first run and an
+  embedding that goes stale next to the anchor. Scopes answer discovery by naming
+  the set instead of guessing at similarity.
+
 ## 2026-08-16 — A note can now end: mark done, reopen, delete finished
 
 Annotations were open forever, so the store could only grow and every stale note
