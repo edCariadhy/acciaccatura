@@ -129,7 +129,10 @@ hints in the listing, and nothing prunes on its own.
 ## 5. Agents close, people delete
 
 - **Closing** a scope finishes every note in it. It is reversible, it keeps the
-  record, and an agent may do it — that is the prune verb.
+  record, and an agent may do it — that is the prune verb. **Built**:
+  `store.resolveScope(scope, by)` reports how many notes it finished, skips
+  notes already finished so the first answer stands, and is reached over MCP as
+  a `scope` argument on `resolve_annotation` rather than a tool of its own.
 - **Deleting** throws away someone's reasoning. It stays a person's decision with
   an explicit yes, as settled for `sweepResolved` in
   [storage-and-lifecycle.md](storage-and-lifecycle.md).

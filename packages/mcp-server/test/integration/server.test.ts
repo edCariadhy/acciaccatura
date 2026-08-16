@@ -294,6 +294,68 @@ describe("MCP server integration", () => {
       expect(textOf(bad as never)).toMatch(/pass a file, a scope, or both/i);
     });
 
+    it("closes a whole set in one call when the change is merged", async () => {
+      await addTo("pr/142", 1, "first thing to review");
+      await addTo("pr/142", 2, "second thing to review");
+
+      const closed = await client.callTool({
+        name: "resolve_annotation",
+        arguments: { scope: "pr/142" },
+      });
+      expect(textOf(closed as never)).toMatch(/2/);
+
+      const got = await client.callTool({ name: "get_annotations", arguments: { scope: "pr/142" } });
+      expect(textOf(got as never)).not.toContain("first thing to review");
+    });
+
+    it("does not close notes outside the set it was given", async () => {
+      await addTo("pr/142", 1, "in the pull request");
+      await addTo("onboarding/billing", 1, "in the tour");
+
+      await client.callTool({ name: "resolve_annotation", arguments: { scope: "pr/142" } });
+
+      const tour = await client.callTool({
+        name: "get_annotations",
+        arguments: { scope: "onboarding/billing" },
+      });
+      expect(textOf(tour as never)).toContain("in the tour");
+      // Both halves, or this passes just as well when closing does nothing.
+      const pr = await client.callTool({ name: "get_annotations", arguments: { scope: "pr/142" } });
+      expect(textOf(pr as never)).not.toContain("in the pull request");
+    });
+
+    it("says plainly when a set had nothing left to close", async () => {
+      // The set name must not contain any word the assertion looks for, or a
+      // reply that echoes the name passes without saying anything true.
+      const closed = await client.callTool({
+        name: "resolve_annotation",
+        arguments: { scope: "pr/777" },
+      });
+      expect((closed as { isError?: boolean }).isError).toBeFalsy();
+      expect(textOf(closed as never)).toMatch(/no open notes/i);
+      // An empty set must not be reported as work done.
+      expect(textOf(closed as never)).not.toMatch(/^Closed/);
+    });
+
+    it("refuses a finish that names neither a note nor a set", async () => {
+      const bad = await client.callTool({ name: "resolve_annotation", arguments: {} });
+      expect((bad as { isError?: boolean }).isError).toBe(true);
+      expect(textOf(bad as never)).toMatch(/id|scope/i);
+    });
+
+    it("refuses to guess when given both a note and a set", async () => {
+      await addTo("pr/142", 1, "a note");
+      const editor = await editorStore();
+      const id = editor.all()[0]!.id;
+
+      // Ambiguous: closing the set and finishing one note are different acts.
+      const bad = await client.callTool({
+        name: "resolve_annotation",
+        arguments: { id, scope: "pr/142" },
+      });
+      expect((bad as { isError?: boolean }).isError).toBe(true);
+    });
+
     it("says when to reach for a set, not only that sets exist", async () => {
       const { tools } = await client.listTools();
       const get = tools.find((t) => t.name === "get_annotations");
