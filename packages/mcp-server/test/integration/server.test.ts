@@ -288,6 +288,10 @@ describe("MCP server integration", () => {
       // bound exists to prevent, and an empty argument list must not be it.
       const bad = await client.callTool({ name: "get_annotations", arguments: {} });
       expect((bad as { isError?: boolean }).isError).toBe(true);
+      // The store throws here too, so an error alone proves nothing. What this
+      // pins is the message an agent actually reads: it has to say what to pass
+      // next, not just that something went wrong.
+      expect(textOf(bad as never)).toMatch(/pass a file, a scope, or both/i);
     });
 
     it("says when to reach for a set, not only that sets exist", async () => {
