@@ -77,14 +77,24 @@ written for. A note whose date cannot be read is reported as `undated` rather
 than dropped or filed under an age it never earned, so the split always adds up
 to the total.
 
-Both writers see it, in the form each can use. The editor has **How Old Are My
-Notes?**, and the delete confirmation now says the ages of what it is about to
-take rather than only the count — a number alone cannot tell six notes finished
-this morning from six nobody has looked at since June. Agents get the narrow
-part they can act on: `get_annotations` says how many days a note has been open
-once it is older than a day. Deleting stays a person's decision, so the report
-that leads to it was not worth a tool of its own — see
-[mcp-surface.md](mcp-surface.md).
+Both writers see it, in the form each can use. Agents get the narrow part they
+can act on: `get_annotations` says how many days a note has been open once it is
+older than a day. Deleting stays a person's decision, so the report that leads
+to it was not worth a tool of its own — see [mcp-surface.md](mcp-surface.md).
+
+In the editor the same report is said twice, at two densities, because the two
+places have different room:
+
+- **How Old Are My Notes?** — a message bar, so counts and the oldest age only:
+  `6 open (oldest 52 days), 2 finished (oldest 41 days).` The full split was
+  tried here first and ran to 125 characters, which the bar cut — with the one
+  number that mattered in the part it cut. The bar's width is not ours to
+  choose, so the order is the defence: open work first, since finished notes are
+  only waiting to be deleted.
+- **The delete confirmation** — a modal, so the whole split. It says the ages of
+  what it would take, not only the count: six notes finished this morning and
+  six nobody has looked at since June are the same number and not the same
+  decision, and this is the one flow that cannot be undone.
 
 Finished notes are excluded from `store.query` by default — `includeResolved`
 brings them back for review UIs. The filter runs *before* the result cap, or a

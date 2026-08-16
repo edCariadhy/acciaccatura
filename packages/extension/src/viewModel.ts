@@ -1,4 +1,4 @@
-import { bySequence, findNoteLines } from "@acciaccatura/core";
+import { ageInDays, bySequence, findNoteLines } from "@acciaccatura/core";
 import type {
   AgeBreakdown,
   AgeReport,
@@ -225,10 +225,28 @@ export function ageSplit(breakdown: AgeBreakdown): string {
   return parts.join(", ");
 }
 
-/** One group of notes as a phrase, e.g. `6 open (2 today, 4 30+ days)`. */
-export function describeAgeGroup(breakdown: AgeBreakdown, noun: string): string {
+/**
+ * One group as a short phrase, e.g. `6 open (oldest 52 days)`.
+ *
+ * The full split is deliberately not here. A message bar truncates, and the
+ * whole split spelled out ran past the end of the bar with the number that
+ * mattered — how much is old — sitting in the part that got cut. The oldest age
+ * is the one number worth reading at a glance; the split belongs where there is
+ * room for it, which is the confirmation before a delete.
+ */
+export function describeAgeGroup(breakdown: AgeBreakdown, noun: string, now?: Date): string {
   if (breakdown.total === 0) return `no ${noun} notes`;
-  return `${breakdown.total} ${noun} (${ageSplit(breakdown)})`;
+
+  const days = breakdown.oldestAt === undefined ? undefined : ageInDays(breakdown.oldestAt, now);
+  const parts: string[] = [];
+  if (days !== undefined && days >= 1) parts.push(`oldest ${days} day${days === 1 ? "" : "s"}`);
+  // Every note being undated would otherwise read as a workspace with nothing
+  // old in it, which is the opposite of what we know.
+  if (breakdown.undated > 0) parts.push(`${breakdown.undated} with no date`);
+
+  return parts.length === 0
+    ? `${breakdown.total} ${noun}`
+    : `${breakdown.total} ${noun} (${parts.join(", ")})`;
 }
 
 /**
@@ -238,9 +256,13 @@ export function describeAgeGroup(breakdown: AgeBreakdown, noun: string): string 
  * this is the half that was missing. Open work and finished work are kept
  * apart, because only the finished half is what a delete would take.
  */
-export function describeAges(report: AgeReport): string {
+export function describeAges(report: AgeReport, now?: Date): string {
   if (report.open.total === 0 && report.finished.total === 0) return "No notes in this workspace.";
-  const open = describeAgeGroup(report.open, "open");
-  const finished = describeAgeGroup(report.finished, "finished");
-  return `Carrying ${open}, ${finished}.`;
+  // Open work first, and no lead-in words. A message bar cuts the end off, and
+  // the bar's width is not ours to choose, so the order has to be the defence:
+  // whatever gets cut is the least important half. Open notes are what the
+  // workspace is still carrying; finished ones are only waiting to be deleted.
+  const open = describeAgeGroup(report.open, "open", now);
+  const finished = describeAgeGroup(report.finished, "finished", now);
+  return `${open}, ${finished}.`;
 }
