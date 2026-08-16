@@ -4,6 +4,36 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-16 — A note can now end: mark done, reopen, delete finished
+
+Annotations were open forever, so the store could only grow and every stale note
+kept spending an agent's context. A note now has an end, in three steps described
+in [standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md):
+`resolve` (who finished it, and when), `reopen` (it was not done after all), and
+`sweepResolved` (delete finished notes older than a cutoff the caller picks).
+
+- **Both writers can finish a note.** Agents call `resolve_annotation`, the fourth
+  MCP tool; people use **Mark Done** in the sidebar or the command palette.
+  `remove_annotation` now says in its description when to use which: resolve when
+  the note was right and the work is over, remove when the note itself is wrong.
+- **A finished note leaves the working surfaces.** It drops out of
+  `get_annotations` and out of the gutter, and stays in the sidebar with a tick
+  and a `done` label so it can be reopened. It is still on disk until someone
+  deletes it.
+- **Finishing is not an overwrite.** Two writers can both decide the work is done;
+  the first answer stands, so they cannot fight over it.
+- **Nothing deletes on a timer.** `sweepResolved` never touches an open note
+  whatever its age, and the editor asks first: "Delete 1 finished note? This
+  cannot be undone."
+- **Old files still read.** `resolvedAt` and `resolvedBy` are optional and absent
+  means open, so notes written by an earlier build are open, not finished.
+
+The live run found a real bug, now fixed: `reload()` did not queue with writes, so
+a re-read landing in the middle of a write replaced the list that write was about
+to save. Two MCP tool calls arriving together lost a finished note **3 times out of
+3**; after the fix, 3 out of 3 persist. Reads now go through the same queue as
+writes.
+
 ## 2026-08-16 — Stored names stay: no rename for `provenance` or the trust values
 
 Decided: `provenance`, and `authoritative` / `suggested` / `unverified`, keep

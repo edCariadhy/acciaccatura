@@ -52,16 +52,23 @@ afterEach(async () => {
 });
 
 describe("MCP server integration", () => {
-  it("advertises exactly the three tools, each with a when-to-call description", async () => {
+  it("advertises a small tool set, each with a when-to-call description", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "annotate_code",
       "get_annotations",
       "remove_annotation",
+      "resolve_annotation",
     ]);
     // The description must say WHEN to call the tool, not only what it does.
     const get = tools.find((t) => t.name === "get_annotations");
     expect(get?.description ?? "").toMatch(/before you edit/i);
+    // Finishing and deleting are different acts, and the descriptions have to
+    // send an agent to the right one.
+    const resolve = tools.find((t) => t.name === "resolve_annotation");
+    expect(resolve?.description ?? "").toMatch(/done|finish/i);
+    const remove = tools.find((t) => t.name === "remove_annotation");
+    expect(remove?.description ?? "").toMatch(/resolve_annotation/);
   });
 
   it("round-trips annotate → get, reporting drift 'aligned' while code is unchanged", async () => {
@@ -161,6 +168,41 @@ describe("MCP server integration", () => {
 
     const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
     expect(textOf(got as never)).toContain("(code not found)");
+  });
+
+  it("stops handing back a note once the work is done", async () => {
+    const saved = await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: "export function add(a, b) {", body: "swap this for the shared helper" },
+    });
+    const id = /Saved annotation (\S+)/.exec(textOf(saved as never))![1]!;
+
+    const before = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
+    expect(textOf(before as never)).toContain("shared helper");
+
+    await client.callTool({ name: "resolve_annotation", arguments: { id } });
+
+    // The work is finished, so the note stops spending context on every turn.
+    const after = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", limit: 10 } });
+    expect(textOf(after as never)).not.toContain("shared helper");
+  });
+
+  it("keeps a note the editor finished out of the agent's results", async () => {
+    const editor = await editorStore();
+    const note = await editor.add({
+      body: "human note, already handled",
+      anchor: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "export function add(a, b) {" },
+      provenance: "human",
+    });
+    await editor.resolve(note.id, "human");
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", limit: 10 } });
+    expect(textOf(got as never)).not.toContain("already handled");
+  });
+
+  it("says so plainly when the id is not one of ours", async () => {
+    const got = await client.callTool({ name: "resolve_annotation", arguments: { id: "not-an-id" } });
+    expect(textOf(got as never)).toMatch(/No annotation with id/);
   });
 
   it("rejects malformed input at the tool boundary (negative startLine)", async () => {

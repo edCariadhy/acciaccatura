@@ -18,9 +18,9 @@ The foundational architecture is in place and the critical paths are working and
 - **Robust Anchoring & Drift Detection:** Annotations capture a line range and a hash of the text snapshot. When code drifts, sliding window heuristics automatically re-anchor the annotations.
 
 ### 2. MCP Server (`@acciaccatura/mcp-server`)
-- **Agent Read Path:** `get_annotations` tool is implemented, returning ranked, drift-checked annotations.
+- **Agent Read Path:** `get_annotations` tool is implemented, returning ranked, drift-checked annotations. Finished notes are left out.
 - **Agent Write Path:** `annotate_code` tool is implemented, defaulting to `suggested` trust.
-- **Maintenance:** `remove_annotation` tool allows agents to clean up stale notes.
+- **Maintenance:** `resolve_annotation` marks the work a note asked for as done; `remove_annotation` deletes a note that was wrong.
 
 ### 3. VS Code Extension (`@acciaccatura/extension`)
 - **Human Write Path:** Command `acciaccatura.annotateSelection` allows developers to capture a note from a selection.
@@ -42,8 +42,15 @@ The foundational architecture is in place and the critical paths are working and
 - [x] **Management UI:** VS Code tree view implemented.
 - [x] **Agent Suggestion Review:** `Promote to Authoritative` implemented.
 
-### Phase 3: Version Control & Collaboration
-*How do teams share annotations if they want to?*
+### Phase 3: Annotation Lifecycle
+*A note is a working note, not a permanent record — see [standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md).*
+- [x] **Mark Done:** `resolve` records who finished the work. Finished notes leave `get_annotations` and the gutter, and keep their id.
+- [x] **Reopen:** finishing a note can be undone.
+- [x] **Delete Finished Notes:** `sweepResolved` takes a cutoff from the caller, never touches an open note, and never runs on a timer.
+- [ ] **Age reporting:** surface how long notes have been open, so a workspace can see what it is carrying before it sweeps.
+
+### Phase 3b: Version Control & Collaboration
+*Demoted by the storage decision: it assumed human-to-human sharing, which is not the product's centre.*
 - [ ] **Export/Import Flow:** Since `.acciaccatura/` is ignored by default to keep proprietary reasoning local, provide an explicit way to export notes to a team-shared file or sync them securely.
 
 ### Phase 4: Storage Architecture & Extension Distribution

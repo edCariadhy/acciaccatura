@@ -10,8 +10,14 @@ export class AnnotationTreeItem extends vscode.TreeItem {
   ) {
     super(annotation.body.split('\n')[0] || 'Annotation', collapsibleState);
 
+    const finished = Boolean(annotation.resolvedAt);
+
     this.tooltip = annotation.body;
-    this.contextValue = annotation.trust === 'suggested' ? 'suggested' : 'authoritative';
+    this.contextValue = finished
+      ? 'resolved'
+      : annotation.trust === 'suggested'
+        ? 'suggested'
+        : 'authoritative';
 
     if (lines.state === 'gone') {
       this.description = 'code not found';
@@ -21,6 +27,12 @@ export class AnnotationTreeItem extends vscode.TreeItem {
         lines.state === 'moved'
           ? `L${lines.startLine}-L${lines.endLine} (moved)`
           : `L${lines.startLine}-L${lines.endLine}`;
+    }
+
+    if (finished) {
+      // Say who finished it: an agent closing a human's note is worth seeing.
+      this.description = `${this.description} · done`;
+      this.tooltip = `${annotation.body}\n\nDone — marked by the ${annotation.resolvedBy ?? 'unknown'} writer.`;
     }
 
     const folders = vscode.workspace.workspaceFolders;
@@ -42,7 +54,9 @@ export class AnnotationTreeItem extends vscode.TreeItem {
       };
     }
 
-    if (lines.state === 'gone') {
+    if (finished) {
+      this.iconPath = new vscode.ThemeIcon('check');
+    } else if (lines.state === 'gone') {
       this.iconPath = new vscode.ThemeIcon('warning');
     } else if (annotation.trust === 'suggested') {
       this.iconPath = new vscode.ThemeIcon('lightbulb');
@@ -99,7 +113,10 @@ export class AnnotationTreeProvider implements vscode.TreeDataProvider<vscode.Tr
     
     if (element) {
       if (element instanceof FileTreeItem) {
-        const fileAnnos = annotations.filter(a => a.anchor.file === element.file);
+        // Open notes first: finished ones are kept for review, not for reading.
+        const fileAnnos = annotations
+          .filter(a => a.anchor.file === element.file)
+          .sort((a, b) => Number(Boolean(a.resolvedAt)) - Number(Boolean(b.resolvedAt)));
         // One read per expanded file, not per note. Reading through the editor
         // means unsaved edits count too.
         const fileText = await this.readFile(element.file);

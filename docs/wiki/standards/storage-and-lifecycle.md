@@ -26,16 +26,37 @@ a design doc, or in this wiki. This is a **non-goal**, not an omission.
 What follows from that:
 
 - **Expiry and resolution are first-class**, not a later feature. A store whose
-  natural state is "notes accumulate forever" is the wrong shape.
+  natural state is "notes accumulate forever" is the wrong shape. **Built** —
+  see [How a note ends](#how-a-note-ends) below.
 - **Anchoring precision matters most in the short term.** A note that lives for
   days rarely meets a rebase. This retires a large class of speculative work —
   cross-file anchoring, history-aware re-anchoring — until evidence demands it.
 - **Bloat is primarily a lifecycle problem**, not a compression problem. Notes
   that end when the work ends do not grow without bound.
 
-The README currently calls annotations "durable notes". That language predates
-this decision and overstates the lifecycle; it should be revised to describe
-working notes with a defined end.
+## How a note ends
+
+A note carries `resolvedAt` and `resolvedBy` (both optional, both absent while it
+is open — so a note written before these existed reads as open, not finished).
+Three steps, and no fourth:
+
+- **Finish it.** `store.resolve(id, by)` records who decided the work was done.
+  The note keeps its id, stays on disk, and leaves the agent-facing query and the
+  gutter. Both writers reach it: `resolve_annotation` over MCP, **Mark Done** in
+  the sidebar or the command palette. Finishing is not an overwrite — the first
+  answer stands, so two writers ending the same work do not fight.
+- **Undo it.** `store.reopen(id)` puts the note back in play. Finishing is a
+  judgement, and judgements are wrong sometimes.
+- **Delete it.** `store.sweepResolved({ resolvedBefore })` deletes notes finished
+  at or before a cutoff the caller picks, and never touches an open note whatever
+  its age. The boundary includes the cutoff itself, so "everything finished so
+  far" does not spare a note finished in the same millisecond. **Nothing sweeps on
+  a timer.** Throwing away someone's reasoning is a person's decision, so it runs
+  from an explicit command with an explicit yes.
+
+Finished notes are excluded from `store.query` by default — `includeResolved`
+brings them back for review UIs. The filter runs *before* the result cap, or a
+few finished notes would eat the three slots an agent gets.
 
 ## 2. Git-agnostic by construction
 
@@ -117,7 +138,9 @@ that ignores them re-introduces the defect at a smaller scale.
   hold the whole store in memory and rewrite it, so the last writer silently
   destroys the other's work — reproduced with a human note erased by an agent
   note. Every write must re-read the shard, merge, and rename a temp file into
-  place.
+  place. **Reads queue with writes too**: a re-read that lands in the middle of a
+  write replaces the list that write is about to save. Two MCP tool calls
+  arriving together lost a finished note this way, 3 times out of 3.
 - **Never persist a re-anchor.** The capture is immutable; where a note
   currently sits is derived at read time. This removes the extra writes
   described above, and stops a note moving onto a near-copy of the code on
