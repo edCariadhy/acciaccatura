@@ -71,3 +71,17 @@ moving. So:
   anyone uses the extension.
 - **At 1.0:** make the formal promise, with the written exceptions list and the
   major-version door. The **tool surface freezes last.**
+
+### The one time we nearly spent it — 2026-08-16
+
+Sharding the store by scope looked like it needed a migration, and the call was
+made to skip one: nothing is published, so no real user data exists yet.
+
+It turned out not to cost anything. `annotations.json` is still the home for
+notes in no set, so an old store file is a **valid input, not a legacy format** —
+its scoped notes are read as they are and move to their own file the next time
+anything is written. No migration step, and the licence to break went unused.
+
+Worth remembering for the next time this comes up: the store is **committed to
+git by default**, so "nobody uses it yet" stops being true the moment anyone
+tries the extension and pushes. The window closes earlier than it looks.
