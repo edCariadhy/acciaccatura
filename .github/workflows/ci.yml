@@ -25,6 +25,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # Gate on vulnerabilities in shipped code only. Dev-tooling advisories
+      # (vitest/vite/esbuild toolchain) are tracked but not blocking — see the
+      # note above on the deliberate vitest v4 upgrade.
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - run: npm run lint
       - run: npm run docs:check

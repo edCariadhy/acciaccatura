@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Single npm workspace tree (one lockfile at the root covers all three
+  # packages), so one entry is enough.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Keep the Actions pinned in ci.yml current too — this is part of the CI
+  # supply chain, not just the app's dependency tree.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
