@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
 import { indexScopes } from "./scope.js";
@@ -399,33 +399,160 @@ export class AnnotationStore {
     return run;
   }
 
+  /**
+   * Read the shared file and every set file, and merge them into one list.
+   *
+   * A note may appear twice when a move between sets stopped half way — see
+   * {@link AnnotationStore.persist}. The newer copy wins, which is what makes a
+   * broken move heal itself rather than needing a repair step.
+   */
   async #readFromDisk(): Promise<void> {
+    const files = [this.#path, ...(await this.#scopeFiles())];
+    const byId = new Map<string, Annotation>();
+
+    for (const file of files) {
+      for (const note of await readAnnotations(file)) {
+        const seen = byId.get(note.id);
+        if (!seen || seen.updatedAt < note.updatedAt) byId.set(note.id, note);
+      }
+    }
+
+    this.#data = { version: 1, annotations: [...byId.values()] };
+  }
+
+  /** Paths of every set file currently on disk. */
+  async #scopeFiles(): Promise<string[]> {
+    const dir = join(dirname(this.#path), SCOPE_DIR);
     try {
-      const raw = await readFile(this.#path, "utf8");
-      const parsed = JSON.parse(raw) as Partial<StoreFile>;
-      this.#data = { version: 1, annotations: parsed.annotations ?? [] };
+      const names = await readdir(dir);
+      return names.filter((n) => n.endsWith(".json")).sort().map((n) => join(dir, n));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-      this.#data = { version: 1, annotations: [] };
+      return [];
     }
   }
 
   /**
-   * Write via a temp file and rename. `rename` is atomic within a filesystem,
-   * so a reader — or a crash — sees either the old file or the new one, never a
-   * half-written store.
+   * Save every file the current list needs.
+   *
+   * A set is the unit you hand over, end, and review, so it is the unit the
+   * store is cut along: a pull request's notes are one file next to the diff,
+   * and two pull requests touching different sets never meet in a conflict.
+   * Notes in no set stay in the shared file, which is also what an older store
+   * is — so an old file still loads, and its scoped notes move to their own
+   * file the next time anything is written.
+   *
+   * Each file is written through a temp file and renamed, which is atomic within
+   * a filesystem. Across two files nothing is atomic, so the ORDER matters:
+   * files that gain notes are written before files that lose them. A crash in
+   * between then leaves a note in two files — a duplicate the next read heals —
+   * instead of in none, which nothing could recover.
    */
   async #persist(): Promise<void> {
+    const wanted = this.#partition();
+
     await mkdir(dirname(this.#path), { recursive: true });
-    const temp = `${this.#path}.${process.pid}.${this.#tempCounter++}.tmp`;
+    if ([...wanted.keys()].some((f) => f !== this.#path)) {
+      await mkdir(join(dirname(this.#path), SCOPE_DIR), { recursive: true });
+    }
+
+    // Anything already on disk that no longer holds notes is emptied, never
+    // deleted: the file staying put is what shows a reviewer that a set was
+    // emptied. A file that never existed is not created just to hold nothing —
+    // a workspace whose notes are all in sets has no use for an empty shared
+    // file sitting in its history.
+    const onDisk = [...(await this.#scopeFiles()), ...((await exists(this.#path)) ? [this.#path] : [])];
+    const emptied = onDisk.filter((f) => !wanted.has(f));
+
+    for (const [file, annotations] of wanted) await this.#write(file, annotations);
+    for (const file of emptied) await this.#write(file, []);
+  }
+
+  /**
+   * Work out which file each note belongs in, and refuse a set whose name would
+   * land on another set's file. Two different sets quietly sharing one file
+   * would merge them, which is worse than saying no.
+   */
+  #partition(): Map<string, Annotation[]> {
+    const byFile = new Map<string, Annotation[]>();
+    const claimedBy = new Map<string, string>();
+
+    for (const note of this.#data.annotations) {
+      let file = this.#path;
+      if (note.scope !== undefined) {
+        file = join(dirname(this.#path), SCOPE_DIR, `${scopeFileName(note.scope)}.json`);
+        const owner = claimedBy.get(file);
+        if (owner !== undefined && owner !== note.scope) {
+          throw new Error(
+            `The sets "${owner}" and "${note.scope}" both want the file ${scopeFileName(note.scope)}.json. Rename one of them.`,
+          );
+        }
+        claimedBy.set(file, note.scope);
+      }
+      const list = byFile.get(file);
+      if (list) list.push(note);
+      else byFile.set(file, [note]);
+    }
+
+    return byFile;
+  }
+
+  /**
+   * Write one file via a temp file and rename. `rename` is atomic within a
+   * filesystem, so a reader — or a crash — sees either the old file or the new
+   * one, never a half-written store.
+   */
+  async #write(file: string, annotations: Annotation[]): Promise<void> {
+    const temp = `${file}.${process.pid}.${this.#tempCounter++}.tmp`;
+    const contents: StoreFile = { version: 1, annotations };
     try {
-      await writeFile(temp, `${JSON.stringify(this.#data, null, 2)}\n`, "utf8");
-      await rename(temp, this.#path);
+      await writeFile(temp, `${JSON.stringify(contents, null, 2)}\n`, "utf8");
+      await rename(temp, file);
     } catch (err) {
       await rm(temp, { force: true });
       throw err;
     }
   }
+}
+
+/** Where set files live, beside the shared store file. */
+const SCOPE_DIR = "scopes";
+
+/** Whether a path is readable. */
+async function exists(file: string): Promise<boolean> {
+  try {
+    await readFile(file, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Read one store file, treating a missing file as empty. */
+async function readAnnotations(file: string): Promise<Annotation[]> {
+  try {
+    const parsed = JSON.parse(await readFile(file, "utf8")) as Partial<StoreFile>;
+    return parsed.annotations ?? [];
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    return [];
+  }
+}
+
+/**
+ * A set's file name. Readable first — a reviewer reads these in a diff — so
+ * `pr/142` becomes `pr__142` rather than something percent-encoded end to end.
+ * Everything outside a safe alphabet is escaped, which keeps a name like
+ * `feature/../etc` inside the scopes folder instead of climbing out of it.
+ *
+ * The mapping is not reversible, and does not need to be: the set's real name is
+ * stored inside the file. It only has to be unique, and {@link AnnotationStore}
+ * refuses two sets that would land on one file.
+ */
+function scopeFileName(scope: string): string {
+  return scope
+    .replace(/\//g, "__")
+    .replace(/[^A-Za-z0-9_-]/g, (c) => `%${c.charCodeAt(0).toString(16).padStart(2, "0")}`);
 }
 
 /**

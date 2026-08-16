@@ -101,6 +101,24 @@ What it costs, knowingly:
 - **Unscoped notes still need a home** — they stay in the store file that exists
   today, which the reader must keep understanding.
 
+### Built
+
+- **File names are readable, not reversible.** `pr/142` becomes
+  `scopes/pr__142.json`, because a reviewer reads these in a diff. Anything
+  outside a safe alphabet is escaped, so a set called `feature/../etc` cannot
+  climb out of the folder. The set's real name lives inside the file, so the
+  mapping never has to be undone — it only has to be unique, and two sets that
+  would land on one file are **refused loudly** rather than quietly merged.
+- **A move is two writes, and nothing is atomic across two files.** The gaining
+  file is written before the losing one, so a crash in between leaves the note in
+  *both* — a duplicate the next read heals by keeping the newer copy — instead of
+  in neither, which nothing could recover.
+- **An emptied set file is emptied, not deleted**, so a reviewer sees the set was
+  cleared. A shared file that never existed is not created just to hold nothing.
+- **The old single file still loads.** It is what a store with no sets looks
+  like, and scoped notes found in it move to their own file on the next write.
+  No migration step, and none of the pre-1.0 licence to break was spent.
+
 ## 4. Staleness is reported, never scored
 
 An agent has to be able to ask whether a standing scope still describes the code,
