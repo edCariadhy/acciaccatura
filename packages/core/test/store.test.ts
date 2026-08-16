@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AnnotationStore } from "../src/store.js";
+import { AnnotationStore, DEFAULT_LIMIT, DEFAULT_SCOPE_LIMIT } from "../src/store.js";
 import type { NewAnnotation } from "../src/types.js";
 
 function draft(overrides: Partial<NewAnnotation> = {}): NewAnnotation {
@@ -456,5 +456,161 @@ describe("AnnotationStore", () => {
     await store.load();
     expect(store.query({ file: "src/a.ts" })).toHaveLength(1);
     expect(store.get("written-by-an-older-build")?.resolvedAt).toBeUndefined();
+  });
+
+  describe("scopes", () => {
+    /** A note in `set` at position `order`, on its own file unless told otherwise. */
+    function inScope(scope: string, order: number, file = `src/f${order}.ts`): NewAnnotation {
+      return draft({ scope, order, anchor: { file, startLine: 1, endLine: 1, snapshot: `l${order}` } });
+    }
+
+    it("leaves a note in no set when the writer names none", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const plain = await store.add(draft());
+
+      expect(plain.scope).toBeUndefined();
+      expect(plain.order).toBeUndefined();
+    });
+
+    it("writes a note into a named set, and keeps it there across a reload", async () => {
+      const first = new AnnotationStore(storePath);
+      await first.load();
+      const saved = await first.add(inScope("pr/142", 1));
+
+      const second = new AnnotationStore(storePath);
+      await second.load();
+      expect(second.get(saved.id)?.scope).toBe("pr/142");
+      expect(second.get(saved.id)?.order).toBe(1);
+    });
+
+    it("returns a set in the order its author chose, not by relevance", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      // Added out of sequence on purpose: insertion order must not decide.
+      await store.add(inScope("pr/142", 3));
+      await store.add(inScope("pr/142", 1));
+      await store.add(inScope("pr/142", 2));
+
+      const tour = store.query({ scope: "pr/142" });
+      expect(tour.map((a) => a.order)).toEqual([1, 2, 3]);
+    });
+
+    it("puts notes with no place in the sequence after the ordered ones", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      await store.add(draft({ scope: "pr/142" }));
+      await store.add(inScope("pr/142", 1));
+
+      expect(store.query({ scope: "pr/142" }).map((a) => a.order)).toEqual([1, undefined]);
+    });
+
+    it("does not mix in notes from another set, or unscoped ones", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      await store.add(inScope("pr/142", 1));
+      await store.add(inScope("onboarding/billing", 1));
+      await store.add(draft());
+
+      expect(store.query({ scope: "pr/142" })).toHaveLength(1);
+    });
+
+    it("reads a set that spans several files", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      await store.add(inScope("onboarding/billing", 1, "src/pay.ts"));
+      await store.add(inScope("onboarding/billing", 2, "src/invoice.ts"));
+
+      const tour = store.query({ scope: "onboarding/billing" });
+      expect(tour.map((a) => a.anchor.file)).toEqual(["src/pay.ts", "src/invoice.ts"]);
+    });
+
+    it("narrows to one file inside a set when the caller gives both", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      await store.add(inScope("onboarding/billing", 1, "src/pay.ts"));
+      await store.add(inScope("onboarding/billing", 2, "src/invoice.ts"));
+      // Same file, different set: the file filter alone would let this through.
+      await store.add(inScope("pr/142", 1, "src/pay.ts"));
+
+      const onPay = store.query({ scope: "onboarding/billing", file: "src/pay.ts" });
+      expect(onPay).toHaveLength(1);
+      expect(onPay[0]?.order).toBe(1);
+      expect(onPay[0]?.scope).toBe("onboarding/billing");
+    });
+
+    it("leaves finished notes out of a set read, as it does for a file", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      const done = await store.add(inScope("pr/142", 1));
+      await store.add(inScope("pr/142", 2));
+      await store.resolve(done.id, "agent");
+
+      expect(store.query({ scope: "pr/142" }).map((a) => a.order)).toEqual([2]);
+      expect(store.query({ scope: "pr/142", includeResolved: true })).toHaveLength(2);
+    });
+
+    it("bounds a set read well above a file read, and lets the caller raise it", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      for (let i = 1; i <= 25; i++) await store.add(inScope("onboarding/billing", i));
+
+      // A tour is a set someone sat down and wrote, so three is far too few —
+      // but it is still bounded, never a full dump.
+      expect(store.query({ scope: "onboarding/billing" })).toHaveLength(DEFAULT_SCOPE_LIMIT);
+      expect(store.query({ scope: "onboarding/billing", limit: 25 })).toHaveLength(25);
+      expect(DEFAULT_SCOPE_LIMIT).toBeGreaterThan(DEFAULT_LIMIT);
+    });
+
+    it("keeps the sequence when a set read is cut short", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      for (let i = 1; i <= 5; i++) await store.add(inScope("pr/142", i));
+
+      // The cap must take the first of the tour, not an arbitrary few.
+      expect(store.query({ scope: "pr/142", limit: 2 }).map((a) => a.order)).toEqual([1, 2]);
+    });
+
+    it("refuses a query that names neither a file nor a set", async () => {
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      await store.add(draft());
+
+      // Without this there is a path that returns everything, which is the one
+      // thing the result bound exists to prevent.
+      expect(() => store.query({} as never)).toThrow(/file|scope/i);
+    });
+
+    it("reads a note saved before scopes existed as belonging to no set", async () => {
+      const older = {
+        version: 1,
+        annotations: [
+          {
+            id: "written-before-scopes",
+            body: "no scope field here",
+            anchor: {
+              file: "src/a.ts",
+              startLine: 1,
+              endLine: 1,
+              snapshot: "const x = 1;",
+              snapshotHash: "0".repeat(64),
+            },
+            provenance: "human",
+            trust: "authoritative",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      };
+      await mkdir(dirname(storePath), { recursive: true });
+      await writeFile(storePath, JSON.stringify(older), "utf8");
+
+      const store = new AnnotationStore(storePath);
+      await store.load();
+      expect(store.get("written-before-scopes")?.scope).toBeUndefined();
+      // It still answers a file lookup, and belongs to no set.
+      expect(store.query({ file: "src/a.ts" })).toHaveLength(1);
+      expect(store.query({ scope: "pr/142" })).toHaveLength(0);
+    });
   });
 });

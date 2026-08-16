@@ -66,6 +66,25 @@ export interface Annotation {
   resolvedAt?: string;
   /** Who decided the work was done. Set together with {@link resolvedAt}. */
   resolvedBy?: Provenance;
+  /**
+   * The named set this note belongs to, like `pr/142` or `onboarding/billing`.
+   * Absent means the note belongs to no set — the plain working note we had
+   * before scopes, which stays fully supported.
+   *
+   * A set answers what a file+line lookup cannot: "what should I review first
+   * in this change", "walk me through billing". The `kind/name` shape is a
+   * convention for people reading it; the store never parses the string.
+   */
+  scope?: string;
+  /**
+   * Where this note sits in its set's sequence, ascending. Absent means the
+   * author gave it no place, and it reads after the ordered ones.
+   *
+   * Sequence is the point of a set: "read the migration before the handler" is
+   * information no ranking can work out, because relevance says what looks
+   * alike and never what to read first.
+   */
+  order?: number;
 }
 
 /** Input to {@link AnnotationStore.add}; the store derives id, hash, timestamps. */
@@ -75,4 +94,8 @@ export interface NewAnnotation {
   provenance: Provenance;
   trust?: TrustLevel;
   author?: string;
+  /** Optional named set to write this note into. See {@link Annotation.scope}. */
+  scope?: string;
+  /** Optional place in that set's sequence. See {@link Annotation.order}. */
+  order?: number;
 }
