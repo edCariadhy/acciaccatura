@@ -7,6 +7,10 @@ coverage/
 .DS_Store
 .vscode-test/
 
+# Mutation testing output: a fresh report every run, and Stryker's sandbox.
+reports/
+.stryker-tmp/
+
 # Ignore personal editor state, but keep the shared run configs that make
 # F5 "Run Extension" work for everyone.
 .vscode/*

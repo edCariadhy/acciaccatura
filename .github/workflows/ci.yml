@@ -35,6 +35,23 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # Asks a different question from the unit job: not "do the tests pass" but
+  # "would they notice if the code were wrong". Core only — it is the pure
+  # domain, and it runs in about 20 seconds there. The threshold is a ratchet
+  # against regression, not a target to reach; see
+  # docs/wiki/standards/engineering-principles.md on reading a survivor.
+  mutation:
+    name: mutation (core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:mutation
+
   # Heavy gate: launches a real VS Code to smoke-test the extension. Runs on
   # PRs and the nightly schedule only — never on plain pushes — and on Linux
   # under xvfb (never macOS: those runner minutes bill 10x).
