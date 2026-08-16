@@ -4,7 +4,7 @@ import { z } from "zod";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { driftStatus, findNoteLines, readRegion } from "@acciaccatura/core";
+import { driftStatus, findNoteLines, readRegion, reportScope } from "@acciaccatura/core";
 import type { Annotation, AnnotationStore } from "@acciaccatura/core";
 
 /**
@@ -187,7 +187,57 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     },
   );
 
+  server.registerTool(
+    "scope_status",
+    {
+      title: "Check a set of notes",
+      description:
+        "Call this BEFORE you rely on a named set, and before you close one. With no arguments it lists every set with how many notes it holds, how many are finished, and when it was opened — cheap, and it reads no code. Pass `scope` to check one set against the code as it is now. You get counts, never a verdict: 'aligned' notes still sit on their lines, 'drifted' notes point at code that moved, 'gone' notes point at code that is no longer there. Decide from the counts yourself — many gone notes in a standing set means it needs repair, and a set whose notes are all finished is one you can close.",
+      inputSchema: {
+        scope: z
+          .string()
+          .optional()
+          .describe("Set to check, e.g. pr/142. Omit to list every set instead"),
+      },
+    },
+    async ({ scope }) => {
+      await store.reload();
+
+      if (scope === undefined) {
+        const index = store.scopes();
+        if (index.length === 0) {
+          return { content: [{ type: "text", text: "No named sets in this workspace." }] };
+        }
+        const lines = index.map(
+          (s) =>
+            `${s.scope} — ${s.notes} note${s.notes === 1 ? "" : "s"} — ${s.open} open, ${s.finished} finished — opened ${s.openedAt}${age(s.openedAt)}`,
+        );
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+
+      const report = await reportScope(scope, store.all(), workspaceRoot);
+      // Absent is not the same answer as a set with nothing wrong, so say so
+      // rather than reporting a row of zeroes.
+      if (!report) {
+        return { content: [{ type: "text", text: `No set named ${scope}.` }] };
+      }
+      const text = [
+        `${report.scope} — ${report.notes} note${report.notes === 1 ? "" : "s"} — ${report.open} open, ${report.finished} finished`,
+        `${report.aligned} aligned, ${report.drifted} drifted, ${report.gone} gone (open notes only)`,
+        `opened ${report.openedAt}${age(report.openedAt)}, last touched ${report.lastTouchedAt}`,
+      ].join("\n");
+      return { content: [{ type: "text", text }] };
+    },
+  );
+
   return server;
+}
+
+/** " (N days ago)", or "" for something opened today. Age is a hint, not a rule. */
+function age(iso: string): string {
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
+  if (!Number.isFinite(days) || days < 1) return "";
+  return ` (${days} day${days === 1 ? "" : "s"} ago)`;
 }
 
 async function render(annotations: Annotation[], workspaceRoot: string): Promise<string> {

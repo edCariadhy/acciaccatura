@@ -39,17 +39,28 @@ that already select notes:
 - `resolve_annotation(scope)` — finishing a whole set at once, so a twenty-note
   PR scope does not need twenty round trips.
 
-Only one genuinely new verb survives that test:
+Two genuinely new verbs survive that test:
 
 - **`update_annotation(id, …)`** — repair a note's body or re-point its anchor,
   keeping its id. Nothing else can express it. Removing and re-adding reissues
   the id and drops the note's place in its scope, which is why "the tour needs
   updating" is currently impossible to say. The core already does this correctly;
-  it has simply never been exposed.
+  it has simply never been exposed. **Not built yet.**
+- **`scope_status(scope?)`** — how a set stands: counts of notes, and of open
+  notes that are aligned, drifted, or gone. **Built.** It is a tool rather than a
+  resource because it is a read that must *compute* — the code has to be
+  compared against every note in the set, which is the same reason drift lives on
+  a tool. The cheap listing and the per-set check are one tool with an optional
+  argument, not two, because the argument is what the rule above asks for. It
+  answers a different question from `get_annotations`: not "what should I know
+  about this code" but "is this set still worth trusting, and can it go".
 
-That leaves **five tools**: `get_annotations`, `annotate_code`,
-`update_annotation`, `resolve_annotation`, `remove_annotation`. Index, read,
-write, repair, end, delete — one verb each, no synonyms.
+That leaves **six tools**: `get_annotations`, `annotate_code`,
+`update_annotation`, `resolve_annotation`, `remove_annotation`, `scope_status`.
+Read, write, repair, end, delete, judge — one verb each, no synonyms.
+
+Six is not a target to grow into. Every tool is a line in the agent's tool list
+on every turn, so the next addition has to clear the same bar these did.
 
 ## 3. Procedures do not live in a skill
 

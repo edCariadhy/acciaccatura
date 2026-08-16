@@ -54,11 +54,14 @@ afterEach(async () => {
 describe("MCP server integration", () => {
   it("advertises a small tool set, each with a when-to-call description", async () => {
     const { tools } = await client.listTools();
+    // Kept short on purpose: every tool costs a line in the agent's tool list
+    // on every turn, which is the same scarce context bounded results protect.
     expect(tools.map((t) => t.name).sort()).toEqual([
       "annotate_code",
       "get_annotations",
       "remove_annotation",
       "resolve_annotation",
+      "scope_status",
     ]);
     // The description must say WHEN to call the tool, not only what it does.
     const get = tools.find((t) => t.name === "get_annotations");
@@ -354,6 +357,70 @@ describe("MCP server integration", () => {
         arguments: { id, scope: "pr/142" },
       });
       expect((bad as { isError?: boolean }).isError).toBe(true);
+    });
+
+    it("lists every set with its counts when asked for no set in particular", async () => {
+      await addTo("pr/142", 1, "review this");
+      await addTo("onboarding/billing", 1, "tour this");
+
+      const status = await client.callTool({ name: "scope_status", arguments: {} });
+      const text = textOf(status as never);
+      expect(text).toContain("pr/142");
+      expect(text).toContain("onboarding/billing");
+    });
+
+    it("says there are no sets rather than returning an empty answer", async () => {
+      const status = await client.callTool({ name: "scope_status", arguments: {} });
+      expect(textOf(status as never)).toMatch(/no (named )?sets/i);
+    });
+
+    it("reports how one set lines up with the code, in counts", async () => {
+      await addTo("pr/142", 1, "still true");
+
+      const status = await client.callTool({
+        name: "scope_status",
+        arguments: { scope: "pr/142" },
+      });
+      const text = textOf(status as never);
+      expect(text).toMatch(/1 aligned/);
+      expect(text).toMatch(/0 drifted/);
+      expect(text).toMatch(/0 gone/);
+    });
+
+    it("reports code that moved out from under a set", async () => {
+      await addTo("pr/142", 1, "this one moved");
+      // Push the anchored line down the file; the code still exists elsewhere.
+      await writeFile(
+        join(root, "src", "math.ts"),
+        "// added\n// added\nexport function add(a, b) {\n  return a + b;\n}\n",
+        "utf8",
+      );
+
+      const status = await client.callTool({
+        name: "scope_status",
+        arguments: { scope: "pr/142" },
+      });
+      expect(textOf(status as never)).toMatch(/1 drifted/);
+    });
+
+    it("gives no report at all for a set that does not exist", async () => {
+      await addTo("pr/142", 1, "a note");
+
+      // "No such set" and "a set with nothing wrong" are different answers.
+      const status = await client.callTool({
+        name: "scope_status",
+        arguments: { scope: "pr/999" },
+      });
+      expect(textOf(status as never)).toMatch(/no set named/i);
+      expect(textOf(status as never)).not.toMatch(/aligned/);
+    });
+
+    it("says when to check a set, not only that checking exists", async () => {
+      const { tools } = await client.listTools();
+      const status = tools.find((t) => t.name === "scope_status");
+      expect(status?.description ?? "").toMatch(/before|when/i);
+      // Counts, never a score: the description must not promise a verdict.
+      expect(status?.description ?? "").not.toMatch(/staleness score|score/i);
     });
 
     it("says when to reach for a set, not only that sets exist", async () => {

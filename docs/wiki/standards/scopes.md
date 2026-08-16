@@ -121,6 +121,14 @@ cheap metadata with no file reads, because a workspace may hold many. Checking
 one scope reads the code for that scope only. Reading a tour and checking whether
 the tour is still true are then the same operation.
 
+**Built**: `store.scopes()` is the index — counts and dates straight from memory,
+no file reads at all. `reportScope(scope, …)` is the check, and reads each file
+once however many notes point into it. Only *open* notes are checked: a finished
+note's code being gone is not a problem to report, and counting it would push an
+agent to repair a set that is already done. A scope that does not exist reports
+as absent rather than as a row of zeroes, because "no such set" and "a set in
+good shape" are different answers. Both are reached over MCP as `scope_status`.
+
 **The product cannot know that a PR merged.** Reading git on a query path is out
 (see [storage-and-lifecycle.md](storage-and-lifecycle.md) §2), so merge is never
 detected — it is *reported* by whoever did it. Age and "everything finished" are
