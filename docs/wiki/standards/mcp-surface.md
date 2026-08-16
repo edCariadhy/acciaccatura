@@ -179,6 +179,11 @@ Asking for a set that does not exist is an error that **names the sets that do**
 so a typo is a one-step fix rather than a guess. Set names complete from the
 store, in prompt arguments as well as in the resource template.
 
+The SDK advertises `prompts.listChanged` here too, and unlike the resource list
+this one needs no notification: these three are registered once and the list
+never changes. If a prompt is ever registered conditionally, that stops being
+true and the same fix the resource list got applies.
+
 There is a second temptation worth naming. Because the store is committed and
 human-readable JSON, an agent with file access can simply read
 `.acciaccatura/scopes/*.json` — and a skill could just say so. That reads the

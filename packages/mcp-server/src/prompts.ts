@@ -153,7 +153,7 @@ export function registerPrompts(server: McpServer, store: AnnotationStore): void
           "Two rules that matter more than finishing:",
           "",
           "- Never re-point a note on a guess. A note moved onto code that merely looks similar is worse than a note that says loudly it cannot be placed. If you are not sure, leave it and report it.",
-          "- Do not use remove_annotation to tidy up a note that is merely out of date. Repair it. Removing reissues nothing — the note and its place in the sequence are gone for good.",
+          "- Do not use remove_annotation to tidy up a note that is merely out of date. Repair it. Removing is final: the note, its id and its place in the sequence go for good, and writing a fresh one does not bring them back.",
           "",
           "Finish by saying what you repaired, what you removed and why, and what you left for a person to decide.",
         ].join("\n"),
