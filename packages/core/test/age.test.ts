@@ -85,6 +85,19 @@ describe("reportAge", () => {
     ]);
   });
 
+  it("cuts the buckets so they touch, in order, with no gap and no overlap", () => {
+    // Bucketing tests only the upper edge, which is correct exactly while this
+    // holds. Re-cut the edges without keeping it and every count silently
+    // shifts, so the assumption is pinned here rather than left as a comment.
+    const { buckets } = reportAge([], NOW).open;
+    for (const [i, bucket] of buckets.entries()) {
+      const next = buckets[i + 1];
+      if (next) expect(bucket.toDays).toBe(next.fromDays);
+      else expect(bucket.toDays).toBeUndefined();
+    }
+    expect(buckets[0]?.fromDays).toBe(0);
+  });
+
   it("ages an open note from when it was written", () => {
     const report = reportAge([note({ createdAt: daysAgo(45) })], NOW);
     expect(report.open.total).toBe(1);

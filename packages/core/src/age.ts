@@ -115,11 +115,13 @@ function breakdown(dates: readonly string[], now: Date): AgeBreakdown {
       undated++;
       continue;
     }
-    // Both edges are checked, so the buckets stay right if this list is ever
-    // reordered or re-cut. The last one has no upper edge.
-    const bucket = buckets.find(
-      (b) => days >= b.fromDays && (b.toDays === undefined || days < b.toDays),
-    );
+    // Only the upper edge is tested. The list is ordered and its buckets touch,
+    // so anything the earlier ones refused is already past this one's lower
+    // edge — checking `fromDays` too reads as care but can never come out
+    // false, and dead code that looks like a safety check is worse than none.
+    // `fromDays` is on the bucket for whoever reads the result, not for this.
+    // The last bucket has no upper edge, so the search always finds one.
+    const bucket = buckets.find((b) => b.toDays === undefined || days < b.toDays);
     if (bucket) bucket.count++;
     // Compared as instants, not as text: two ISO dates may carry different
     // offsets, and the earlier one is not always the smaller string.
