@@ -5,7 +5,17 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     // Build output, deps, and the downloaded VS Code are never linted.
-    ignores: ["**/dist/**", "**/out/**", "**/.vscode-test/**", "**/node_modules/**"],
+    // `.claude/` holds agent worktrees: a full second copy of the repo, whose
+    // duplicate tsconfig.json files make typescript-eslint refuse to pick a
+    // root ("multiple candidate TSConfigRootDirs"). CI never sees them, so
+    // without this line lint fails only on the machine that used a worktree.
+    ignores: [
+      "**/dist/**",
+      "**/out/**",
+      "**/.vscode-test/**",
+      "**/node_modules/**",
+      ".claude/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
