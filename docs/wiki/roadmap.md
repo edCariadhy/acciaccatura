@@ -47,7 +47,7 @@ The foundational architecture is in place and the critical paths are working and
 - [x] **Mark Done:** `resolve` records who finished the work. Finished notes leave `get_annotations` and the gutter, and keep their id.
 - [x] **Reopen:** finishing a note can be undone.
 - [x] **Delete Finished Notes:** `sweepResolved` takes a cutoff from the caller, never touches an open note, and never runs on a timer.
-- [ ] **Age reporting:** surface how long notes have been open, so a workspace can see what it is carrying before it sweeps.
+- [x] **Age reporting:** `reportAge` groups open notes by how long they have waited and finished notes by how long they have been safe to delete — counts and buckets, never a score, and a date it cannot read is reported rather than dropped. The editor has **How Old Are My Notes?**, and the delete confirmation now says the ages of what it would take, not only the count. Deleting is a person's decision, so this did not earn an MCP tool; agents get the part they can act on, `get_annotations` saying how many days a note has been open.
 
 ### Phase 4: Scopes — the next trajectory
 *A named set of notes, with an order and a lifetime of its own. Decided in [standards/scopes.md](standards/scopes.md); it is what makes PR review and onboarding expressible.*

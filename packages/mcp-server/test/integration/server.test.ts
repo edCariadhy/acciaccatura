@@ -75,6 +75,71 @@ describe("MCP server integration", () => {
     expect(remove?.description ?? "").toMatch(/resolve_annotation/);
   });
 
+  /** Put a note straight on disk so a test can state its age. */
+  async function writeAged(createdAt: string, extra: Record<string, unknown> = {}): Promise<void> {
+    await mkdir(join(root, ".acciaccatura"), { recursive: true });
+    await writeFile(
+      join(root, ".acciaccatura", "annotations.json"),
+      JSON.stringify({
+        version: 1,
+        annotations: [
+          {
+            id: "aged",
+            body: "this has been waiting a while",
+            anchor: {
+              file: "src/math.ts",
+              startLine: 1,
+              endLine: 2,
+              snapshot: "export function add(a, b) {\n  return a + b;",
+              snapshotHash: "stale",
+            },
+            provenance: "agent",
+            trust: "suggested",
+            createdAt,
+            updatedAt: createdAt,
+            ...extra,
+          },
+        ],
+      }),
+      "utf8",
+    );
+  }
+
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+
+  it("says how long an old note has been open, so an agent can weigh it", async () => {
+    await writeAged(daysAgo(40));
+    const got = await client.callTool({
+      name: "get_annotations",
+      arguments: { file: "src/math.ts" },
+    });
+    // Notes are working notes. One open for weeks is likelier to describe work
+    // that already moved on, and an agent cannot tell without being told.
+    expect(textOf(got as never)).toMatch(/open 40 days/);
+  });
+
+  it("spends no words on a note written today", async () => {
+    await writeAged(daysAgo(0));
+    const got = await client.callTool({
+      name: "get_annotations",
+      arguments: { file: "src/math.ts" },
+    });
+    // Every returned annotation is paid for on every later turn, so an age
+    // that says nothing useful is not printed at all.
+    expect(textOf(got as never)).not.toMatch(/open \d+ day/);
+  });
+
+  it("leaves a finished note out entirely, so its age never comes up", async () => {
+    await writeAged(daysAgo(90), { resolvedAt: daysAgo(1), resolvedBy: "human" });
+    const got = await client.callTool({
+      name: "get_annotations",
+      arguments: { file: "src/math.ts" },
+    });
+    // This is why `render` never has to decide what "open" means for a finished
+    // note: the query has already dropped it.
+    expect(textOf(got as never)).toBe("No annotations for this location.");
+  });
+
   it("round-trips annotate → get, reporting drift 'aligned' while code is unchanged", async () => {
     const snap = "export function add(a, b) {\n  return a + b;";
     const saved = await client.callTool({

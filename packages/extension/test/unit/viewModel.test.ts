@@ -1,7 +1,15 @@
-import type { Annotation, NoteLines, ScopeIndexEntry, ScopeReport } from "@acciaccatura/core";
+import type {
+  AgeBreakdown,
+  Annotation,
+  NoteLines,
+  ScopeIndexEntry,
+  ScopeReport,
+} from "@acciaccatura/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  ageSplit,
+  describeAges,
   filesWithNotes,
   gutterMarks,
   noteView,
@@ -293,5 +301,54 @@ describe("a check that no longer describes the set", () => {
 
   it("still marks that set as done", () => {
     expect(scopeView(entry({ open: 0, finished: 3 }), report({ gone: 1 })).icon).toBe("check");
+  });
+});
+
+describe("age, said in one line", () => {
+  /** A breakdown with the given counts, in bucket order. */
+  function breakdown(counts: number[], undated = 0): AgeBreakdown {
+    const labels = ["today", "1-6 days", "7-29 days", "30+ days"];
+    const buckets = labels.map((label, i) => ({
+      fromDays: i,
+      label,
+      count: counts[i] ?? 0,
+    }));
+    const total = counts.reduce((a, b) => a + b, 0) + undated;
+    return { total, buckets, undated };
+  }
+
+  it("leaves out the buckets that are empty", () => {
+    // A reader deciding what to delete needs the numbers that are not zero.
+    // "2 today, 0 1-6 days, 0 7-29 days, 4 30+ days" buries them.
+    expect(ageSplit(breakdown([2, 0, 0, 4]))).toBe("2 today, 4 30+ days");
+  });
+
+  it("keeps the buckets in oldest-last order, so the split reads as a scale", () => {
+    expect(ageSplit(breakdown([1, 1, 1, 1]))).toBe("1 today, 1 1-6 days, 1 7-29 days, 1 30+ days");
+  });
+
+  it("says out loud when a date could not be read", () => {
+    // Silently dropping it would leave a split that does not add up to the
+    // total, with nothing to say why.
+    expect(ageSplit(breakdown([1], 2))).toBe("1 today, 2 with no readable date");
+  });
+
+  it("keeps open and finished apart in the summary", () => {
+    const line = describeAges({ open: breakdown([0, 0, 0, 6]), finished: breakdown([2]) });
+    expect(line).toMatch(/6 open \(6 30\+ days\)/);
+    expect(line).toMatch(/2 finished \(2 today\)/);
+  });
+
+  it("names the empty half instead of showing it as a zero", () => {
+    const line = describeAges({ open: breakdown([3]), finished: breakdown([]) });
+    expect(line).toMatch(/3 open/);
+    expect(line).toMatch(/no finished notes/);
+    expect(line).not.toMatch(/0 finished/);
+  });
+
+  it("says nothing is being carried when nothing is", () => {
+    expect(describeAges({ open: breakdown([]), finished: breakdown([]) })).toBe(
+      "No notes in this workspace.",
+    );
   });
 });

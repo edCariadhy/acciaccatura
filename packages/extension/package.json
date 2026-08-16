@@ -68,6 +68,11 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "acciaccatura.showNoteAges",
+        "title": "How Old Are My Notes?",
+        "category": "Acciaccatura"
+      },
+      {
         "command": "acciaccatura.closeScope",
         "title": "Close Set",
         "category": "Acciaccatura"

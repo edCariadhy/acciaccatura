@@ -1,5 +1,12 @@
 import { bySequence, findNoteLines } from "@acciaccatura/core";
-import type { Annotation, NoteLines, ScopeIndexEntry, ScopeReport } from "@acciaccatura/core";
+import type {
+  AgeBreakdown,
+  AgeReport,
+  Annotation,
+  NoteLines,
+  ScopeIndexEntry,
+  ScopeReport,
+} from "@acciaccatura/core";
 
 /**
  * What the editor shows, decided without the editor.
@@ -202,4 +209,38 @@ export function scopeView(entry: ScopeIndexEntry, report?: ScopeReport): ScopeVi
  */
 export function notesInScope(annotations: readonly Annotation[], scope: string): Annotation[] {
   return annotations.filter((a) => a.scope === scope).sort(bySequence);
+}
+
+/**
+ * Just the age split, e.g. `2 today, 4 30+ days`, or `""` for nothing to split.
+ *
+ * Empty buckets are left out. Someone deciding what to delete needs the two or
+ * three numbers that are not zero, not a full grid with the zeroes in it.
+ */
+export function ageSplit(breakdown: AgeBreakdown): string {
+  const parts = breakdown.buckets.filter((b) => b.count > 0).map((b) => `${b.count} ${b.label}`);
+  // Notes we could not age are said out loud rather than folded into a bucket,
+  // or the split would stop adding up to the total without saying why.
+  if (breakdown.undated > 0) parts.push(`${breakdown.undated} with no readable date`);
+  return parts.join(", ");
+}
+
+/** One group of notes as a phrase, e.g. `6 open (2 today, 4 30+ days)`. */
+export function describeAgeGroup(breakdown: AgeBreakdown, noun: string): string {
+  if (breakdown.total === 0) return `no ${noun} notes`;
+  return `${breakdown.total} ${noun} (${ageSplit(breakdown)})`;
+}
+
+/**
+ * What the workspace is carrying, in one line for a message bar.
+ *
+ * Deleting finished notes asks for a cutoff and gives nothing to pick it with;
+ * this is the half that was missing. Open work and finished work are kept
+ * apart, because only the finished half is what a delete would take.
+ */
+export function describeAges(report: AgeReport): string {
+  if (report.open.total === 0 && report.finished.total === 0) return "No notes in this workspace.";
+  const open = describeAgeGroup(report.open, "open");
+  const finished = describeAgeGroup(report.finished, "finished");
+  return `Carrying ${open}, ${finished}.`;
 }

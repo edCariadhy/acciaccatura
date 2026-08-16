@@ -5,7 +5,7 @@ import { AnnotationStore } from "@acciaccatura/core";
 import type { CapturedSelection } from "@acciaccatura/core";
 
 import { captureAnnotation } from "./capture.js";
-import { clearFinishedNotes, markNoteDone, reopenNote } from "./lifecycle.js";
+import { clearFinishedNotes, markNoteDone, reopenNote, showNoteAges } from "./lifecycle.js";
 import type { LifecycleDeps } from "./lifecycle.js";
 
 import { addNoteToScope, checkScope, closeScope } from "./scopes.js";
@@ -132,12 +132,8 @@ export function activate(context: vscode.ExtensionContext): void {
         );
         return picked?.annotation;
       },
-      confirmDelete: async (count) =>
-        (await vscode.window.showWarningMessage(
-          `Delete ${count} finished note${count === 1 ? "" : "s"}? This cannot be undone.`,
-          { modal: true },
-          "Delete",
-        )) === "Delete",
+      confirmDelete: async (question) =>
+        (await vscode.window.showWarningMessage(question, { modal: true }, "Delete")) === "Delete",
       notify: (level, message) =>
         level === "info"
           ? void vscode.window.showInformationMessage(`Acciaccatura: ${message}`)
@@ -177,6 +173,13 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!deps) return;
     await clearFinishedNotes(deps);
     await redraw();
+  });
+
+  // Reporting only: it writes nothing, so there is nothing to redraw.
+  const noteAges = vscode.commands.registerCommand("acciaccatura.showNoteAges", async () => {
+    const deps = lifecycleDeps();
+    if (!deps) return;
+    await showNoteAges(deps);
   });
 
   /** Everything the set-level flows need, wired to the real editor. */
@@ -270,7 +273,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
-    closeSet, checkSet, addToSet,
+    noteAges, closeSet, checkSet, addToSet,
   );
 }
 

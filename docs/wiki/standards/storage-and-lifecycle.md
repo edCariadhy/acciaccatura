@@ -59,6 +59,33 @@ Three steps, and no fourth:
   a timer.** Throwing away someone's reasoning is a person's decision, so it runs
   from an explicit command with an explicit yes.
 
+### Knowing what you are holding
+
+Deleting asks the caller for a cutoff date and, for a long time, gave them
+nothing to pick one with. `reportAge` is that missing half: open notes grouped by
+how long they have waited, finished notes grouped by how long they have been safe
+to delete, aged from `createdAt` and `resolvedAt` respectively because the two
+answer different questions. Metadata only — it reads no code and opens no file.
+
+Counts and buckets (`today`, `1-6 days`, `7-29 days`, `30+ days`), never a score,
+for the same reason the staleness rollup gives counts: "6 open, 30+ days" is
+something a reader can act on, where "health: 0.4" would be an authority we made
+up. The edges are fixed rather than passed in — a caller choosing its own edges
+is a caller choosing its own meaning — and a month is the edge that matters,
+because a working note still open after a month has outlived the work it was
+written for. A note whose date cannot be read is reported as `undated` rather
+than dropped or filed under an age it never earned, so the split always adds up
+to the total.
+
+Both writers see it, in the form each can use. The editor has **How Old Are My
+Notes?**, and the delete confirmation now says the ages of what it is about to
+take rather than only the count — a number alone cannot tell six notes finished
+this morning from six nobody has looked at since June. Agents get the narrow
+part they can act on: `get_annotations` says how many days a note has been open
+once it is older than a day. Deleting stays a person's decision, so the report
+that leads to it was not worth a tool of its own — see
+[mcp-surface.md](mcp-surface.md).
+
 Finished notes are excluded from `store.query` by default — `includeResolved`
 brings them back for review UIs. The filter runs *before* the result cap, or a
 few finished notes would eat the three slots an agent gets.

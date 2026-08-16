@@ -4,7 +4,7 @@ import { z } from "zod";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { driftStatus, findNoteLines, readRegion, reportScope } from "@acciaccatura/core";
+import { ageInDays, driftStatus, findNoteLines, readRegion, reportScope } from "@acciaccatura/core";
 import type { Annotation, AnnotationStore } from "@acciaccatura/core";
 
 /**
@@ -24,7 +24,7 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     {
       title: "Get code annotations",
       description:
-        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions). Results are ranked and limited. Treat them as hints, not rules. Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code. Pass `line` to ask about one place. Pass `scope` instead to read a named set in the order its author meant it to be read — use that when you are reviewing a change or being walked through an area, because the sequence is the point. You must pass `file`, `scope`, or both.",
+        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions). Results are ranked and limited. Treat them as hints, not rules. Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code. A result also says how many days it has been open once it is older than a day: these are working notes, so an old one is likelier to describe work that has already moved on. Pass `line` to ask about one place. Pass `scope` instead to read a named set in the order its author meant it to be read — use that when you are reviewing a change or being walked through an area, because the sequence is the point. You must pass `file`, `scope`, or both.",
       inputSchema: {
         file: z.string().optional().describe("Workspace-relative POSIX path, e.g. src/store.ts"),
         scope: z
@@ -323,8 +323,8 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
 
 /** " (N days ago)", or "" for something opened today. Age is a hint, not a rule. */
 function age(iso: string): string {
-  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
-  if (!Number.isFinite(days) || days < 1) return "";
+  const days = ageInDays(iso);
+  if (days === undefined || days < 1) return "";
   return ` (${days} day${days === 1 ? "" : "s"} ago)`;
 }
 
@@ -351,7 +351,14 @@ async function render(annotations: Annotation[], workspaceRoot: string): Promise
       const set = a.scope
         ? ` [${a.scope}${a.order === undefined ? "" : ` #${a.order}`}]`
         : "";
-      const head = `#${a.id} [${a.provenance}/${a.trust}]${set} ${where} (drift: ${drift})`;
+      // How long the note has waited. A note is a working note, so one that has
+      // been open for weeks is likelier to describe work that already moved on
+      // — worth saying, and only worth the tokens once it is a day old. Every
+      // note rendered here is open: finished ones leave the query.
+      const days = ageInDays(a.createdAt);
+      const waiting =
+        days === undefined || days < 1 ? "" : `, open ${days} day${days === 1 ? "" : "s"}`;
+      const head = `#${a.id} [${a.provenance}/${a.trust}]${set} ${where} (drift: ${drift}${waiting})`;
       return `${head}\n${a.body}`;
     }),
   );
