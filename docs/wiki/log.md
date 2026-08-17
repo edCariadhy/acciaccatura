@@ -4,6 +4,42 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-17 — Two processes were losing each other's notes, silently
+
+Found by asking a question the code could not answer from the outside: the
+editor and the MCP server are two processes, so what stops one saving over the
+other? Nothing did.
+
+Reproduced before fixing anything. Two writers 40 ms apart — an agent writing a
+review while a person clicks — **lost one writer's notes in full, five runs out
+of five**, with every write reporting success. Flat out, roughly half of 50
+notes went. The mechanism is the oldest one there is: read, change, save the
+whole thing, with no way to tell that somebody else saved in between.
+
+Two guards already existed and neither covers it. The write queue orders a
+process against itself. Re-reading before writing — which
+[standards/storage-and-lifecycle.md](standards/storage-and-lifecycle.md) §4
+prescribed as *the* fix, and which was implemented exactly as written — catches
+"somebody wrote before me", and the case that loses notes is "somebody is
+writing at the same moment as me". Measured: both processes read the same file,
+both found it unchanged, both saved. The page has been corrected.
+
+Fixed with a real lock held from the read to the last rename. Nothing lost at
+two writers 40 ms apart, or at six writers flat out.
+
+Two things worth keeping from how it went:
+
+- **The first lock was itself broken, and only contention showed it.** `wx`
+  creates the lock file and fills it in as a second step, so a lock taken a
+  microsecond ago can still be empty. The staleness check read that empty file,
+  failed to parse it, called it rubbish and deleted a lock somebody was holding.
+  Two processes at a human pace never caught it; four flat out lost a few notes
+  a round, scattered, with every write reporting success. Age now comes from the
+  file's own timestamp and never from what is written inside it.
+- **The test had to spawn processes.** Two store instances inside one process
+  share a write queue and pass happily. That false assurance is a large part of
+  why this lasted as long as it did.
+
 ## 2026-08-17 — Correction: "skills are one vendor's format" was not true
 
 The 2026-08-16 entry below, and
