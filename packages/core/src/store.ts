@@ -438,19 +438,31 @@ export class AnnotationStore {
   }
 
   /**
-   * Read the shared file and every set file, and merge them into one list.
+   * Read the legacy shared file, every set file, and every loose note's own
+   * file, and merge them into one list.
    *
-   * A note may appear twice when a move between sets stopped half way — see
+   * A note may appear twice when a move stopped half way — see
    * {@link AnnotationStore.persist}. The newer copy wins, which is what makes a
    * broken move heal itself rather than needing a repair step.
    */
   async #readFromDisk(): Promise<void> {
-    const files = [this.#path, ...(await this.#scopeFiles())];
-    const byId = new Map<string, Annotation>();
+    const files = [
+      this.#path,
+      ...(await this.#filesUnder(SCOPE_DIR)),
+      ...(await this.#filesUnder(NOTES_DIR)),
+    ];
 
+    // In parallel: a loose note is one file each, so a workspace with 2,000 of
+    // them is 2,000 files, and reading them one at a time was measured at
+    // 165 ms — most of it waiting on I/O that has nothing to do with any other
+    // file. In parallel the same read is ~20 ms. Nothing here depends on read
+    // order: each file's mark and digest are keyed by its own path, and the
+    // "newer wins" merge below is commutative.
+    const read = await Promise.all(files.map(async (file) => ({ file, ...(await readWithMark(file)) })));
+
+    const byId = new Map<string, Annotation>();
     this.#seen.clear();
-    for (const file of files) {
-      const { annotations, mark, digest } = await readWithMark(file);
+    for (const { file, annotations, mark, digest } of read) {
       // The mark belongs to the bytes just read, not to the file a moment
       // later, or a write landing in between would be invisible to the check
       // that exists to catch exactly that.
@@ -465,9 +477,9 @@ export class AnnotationStore {
     this.#data = { version: 1, annotations: [...byId.values()] };
   }
 
-  /** Paths of every set file currently on disk. */
-  async #scopeFiles(): Promise<string[]> {
-    const dir = join(dirname(this.#path), SCOPE_DIR);
+  /** Paths of every `.json` file currently on disk under a store subdirectory. */
+  async #filesUnder(subdir: string): Promise<string[]> {
+    const dir = join(dirname(this.#path), subdir);
     try {
       const names = await readdir(dir);
       return names.filter((n) => n.endsWith(".json")).sort().map((n) => join(dir, n));
@@ -480,34 +492,56 @@ export class AnnotationStore {
   /**
    * Save every file the current list needs.
    *
-   * A set is the unit you hand over, end, and review, so it is the unit the
-   * store is cut along: a pull request's notes are one file next to the diff,
-   * and two pull requests touching different sets never meet in a conflict.
-   * Notes in no set stay in the shared file, which is also what an older store
-   * is — so an old file still loads, and its scoped notes move to their own
-   * file the next time anything is written.
+   * A set is the unit you hand over, end, and review, so it stays one readable
+   * file next to the diff. A note in no set is the opposite: short-lived by
+   * design and swept away, so it gets a file of its own — one write touches one
+   * note, and two loose notes can never collide, because they never share a
+   * file to begin with. See decisions/0003-store-shape.md for why the two
+   * lifetimes ended up in two shapes rather than one shape for both.
+   *
+   * The legacy shared file (`annotations.json`) is still read, because it is
+   * what every store looked like before this — so an old file still loads, and
+   * whatever it holds moves out to a scope file or a note file the next time
+   * anything is written. It is emptied like a scope file once nothing is left
+   * in it, never deleted, for the same reason: staying put and empty is what
+   * shows a reviewer the notes moved rather than vanished.
+   *
+   * A note file, unlike a scope file, IS deleted once its note is gone —
+   * removed, resolved into nothing, or moved to a scope. There is nothing for
+   * an empty note file to mean: a scope can be "opened and now finished", but
+   * an id that no longer exists is just gone, and a tombstone-shaped file for
+   * every note ever created was the exact git litter one file per note was
+   * chosen to avoid.
    *
    * Each file is written through a temp file and renamed, which is atomic within
-   * a filesystem. Across two files nothing is atomic, so the ORDER matters:
-   * files that gain notes are written before files that lose them. A crash in
-   * between then leaves a note in two files — a duplicate the next read heals —
-   * instead of in none, which nothing could recover.
+   * a filesystem. Across files nothing is atomic, so the ORDER matters: files
+   * that gain notes are written before files that lose them, and deletions run
+   * last of all. A crash before the end then leaves a note in two places — a
+   * duplicate the next read heals — instead of in none, which nothing could
+   * recover.
    */
   async #persist(): Promise<void> {
     const wanted = this.#partition();
+    const base = dirname(this.#path);
+    const scopeDir = join(base, SCOPE_DIR);
+    const notesDir = join(base, NOTES_DIR);
 
-    await mkdir(dirname(this.#path), { recursive: true });
-    if ([...wanted.keys()].some((f) => f !== this.#path)) {
-      await mkdir(join(dirname(this.#path), SCOPE_DIR), { recursive: true });
+    await mkdir(base, { recursive: true });
+    if ([...wanted.keys()].some((f) => dirname(f) === scopeDir)) {
+      await mkdir(scopeDir, { recursive: true });
+    }
+    if ([...wanted.keys()].some((f) => dirname(f) === notesDir)) {
+      await mkdir(notesDir, { recursive: true });
     }
 
-    // Anything already on disk that no longer holds notes is emptied, never
-    // deleted: the file staying put is what shows a reviewer that a set was
-    // emptied. A file that never existed is not created just to hold nothing —
-    // a workspace whose notes are all in sets has no use for an empty shared
+    // A file that never existed is not created just to hold nothing — a
+    // workspace whose notes are all in sets has no use for an empty shared
     // file sitting in its history.
-    const onDisk = [...(await this.#scopeFiles()), ...((await exists(this.#path)) ? [this.#path] : [])];
-    const emptied = onDisk.filter((f) => !wanted.has(f));
+    const onDiskShared = (await exists(this.#path)) ? [this.#path] : [];
+    const toEmpty = [...(await this.#filesUnder(SCOPE_DIR)), ...onDiskShared].filter((f) => !wanted.has(f));
+    // Read fresh from the directory right here, so a file another writer just
+    // deleted is never asked to be deleted again.
+    const toDelete = (await this.#filesUnder(NOTES_DIR)).filter((f) => !wanted.has(f));
 
     // Serialise first, then keep only what a write would actually alter. The
     // comparison is on the exact bytes about to be saved, so it can never skip
@@ -515,32 +549,33 @@ export class AnnotationStore {
     const gaining = [...wanted]
       .map(([file, annotations]) => ({ file, text: serialise(annotations) }))
       .filter(({ file, text }) => digestOf(text) !== this.#digest.get(file));
-    const losing = emptied
+    const losing = toEmpty
       .map((file) => ({ file, text: serialise([]) }))
       .filter(({ file, text }) => digestOf(text) !== this.#digest.get(file));
 
-    if (gaining.length === 0 && losing.length === 0) return;
+    if (gaining.length === 0 && losing.length === 0 && toDelete.length === 0) return;
 
-    // Check before writing any of them. Checking as we go could leave half a
+    // Check before touching any of them. Checking as we go could leave half a
     // change applied, which is worse than the conflict itself: the retry would
     // then run against a store we had already half rewritten.
-    await this.#checkUnchanged([...gaining, ...losing].map((w) => w.file));
+    await this.#checkUnchanged([...gaining, ...losing].map((w) => w.file), toDelete);
 
-    // Gaining before losing, still: a note moving between sets must exist in
-    // both files rather than neither if this stops half way.
+    // Gaining, then losing, then deleting: a note moving between files must
+    // exist somewhere throughout, never in neither place at once.
     for (const { file, text } of gaining) await this.#write(file, text);
     for (const { file, text } of losing) await this.#write(file, text);
+    for (const file of toDelete) await this.#remove(file);
   }
 
   /**
-   * Refuse to write over anything that moved since it was read.
+   * Refuse to touch anything that moved since it was read.
    *
    * A file we never read counts as moved: another writer creating a set
    * between our read and our write is the case where we would otherwise empty
    * their brand-new file, having partitioned a list that never knew about it.
    */
-  async #checkUnchanged(files: readonly string[]): Promise<void> {
-    for (const file of new Set(files)) {
+  async #checkUnchanged(toWrite: readonly string[], toDelete: readonly string[] = []): Promise<void> {
+    for (const file of new Set([...toWrite, ...toDelete])) {
       const now = await markOf(file);
       if (now !== (this.#seen.get(file) ?? ABSENT)) throw new StoreChangedError(file);
     }
@@ -556,7 +591,7 @@ export class AnnotationStore {
     const claimedBy = new Map<string, string>();
 
     for (const note of this.#data.annotations) {
-      let file = this.#path;
+      let file: string;
       if (note.scope !== undefined) {
         file = join(dirname(this.#path), SCOPE_DIR, `${scopeFileName(note.scope)}.json`);
         const owner = claimedBy.get(file);
@@ -566,7 +601,14 @@ export class AnnotationStore {
           );
         }
         claimedBy.set(file, note.scope);
+      } else {
+        // A note's own file, one note to a file. Its id is a UUID handed out by
+        // `crypto.randomUUID()`, so — unlike a set name, which a person typed —
+        // it needs no escaping to be a safe file name.
+        file = join(dirname(this.#path), NOTES_DIR, `${note.id}.json`);
       }
+      // Always exactly one note for a note-file path, but sharing the map with
+      // scope files (which can hold many) keeps the write side uniform.
       const list = byFile.get(file);
       if (list) list.push(note);
       else byFile.set(file, [note]);
@@ -594,12 +636,29 @@ export class AnnotationStore {
       throw err;
     }
   }
+
+  /**
+   * Delete a note's own file. `unlink` is already atomic — a reader sees the
+   * file or does not, never half of it — so there is no temp-file dance here,
+   * unlike {@link AnnotationStore.write}.
+   */
+  async #remove(file: string): Promise<void> {
+    await rm(file, { force: true });
+  }
 }
 
 /** Where set files live, beside the shared store file. */
 const SCOPE_DIR = "scopes";
 
-/** Whether a path is readable. */
+/**
+ * Where a loose note's own file lives, beside the shared store file.
+ *
+ * Separate from {@link SCOPE_DIR} because the two hold notes with opposite
+ * lifetimes and are handled differently in {@link AnnotationStore.persist}: a
+ * scope file survives empty, a note file is deleted once its note is gone.
+ */
+const NOTES_DIR = "notes";
+
 /** How many times a write redoes itself before giving up. */
 const MAX_WRITE_ATTEMPTS = 8;
 

@@ -80,16 +80,21 @@ describe("a write only touches what it changes", () => {
     expect(rewritten(before, await inodes())).toEqual(["scopes/pr__1.json"]);
   });
 
-  it("leaves the sets alone when a loose note is added", async () => {
+  it("touches nothing when a loose note is added — not even another loose note", async () => {
     const store = new AnnotationStore(storePath);
     await store.load();
     await store.add(draft("in a set", "pr/1"));
-    await store.add(draft("loose"));
+    const first = await store.add(draft("first loose"));
 
     const before = await inodes();
-    await store.add(draft("another loose"));
+    const second = await store.add(draft("second loose"));
 
-    expect(rewritten(before, await inodes())).toEqual(["annotations.json"]);
+    // One file per note is the whole point: two loose notes can never collide,
+    // because they never share a file to begin with. Only the new note's own
+    // file should appear.
+    const changed = rewritten(before, await inodes());
+    expect(changed).toEqual([`notes/${second.id}.json`]);
+    expect(changed).not.toContain(`notes/${first.id}.json`);
   });
 
   it("writes nothing at all when nothing changed", async () => {

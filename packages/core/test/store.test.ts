@@ -240,14 +240,17 @@ describe("AnnotationStore", () => {
     await store.update(saved.id, { body: "revised" });
     await store.remove(saved.id);
 
-    expect(await readdir(dirname(storePath))).toEqual(["annotations.json"]);
+    // The note's own file was created, then deleted along with it. What can be
+    // left over — a `notes/` directory holding nothing, never a `.tmp` file —
+    // is what this is actually guarding against.
+    expect(await readdir(join(dirname(storePath), "notes"))).toEqual([]);
   });
 
   it("writes newline-terminated pretty JSON", async () => {
     const store = new AnnotationStore(storePath);
     await store.load();
-    await store.add(draft());
-    const raw = await readFile(storePath, "utf8");
+    const saved = await store.add(draft());
+    const raw = await readFile(join(dirname(storePath), "notes", `${saved.id}.json`), "utf8");
     expect(raw.endsWith("}\n")).toBe(true);
     expect(raw).toContain("\n  ");
   });
