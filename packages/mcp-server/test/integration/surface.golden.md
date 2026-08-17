@@ -278,7 +278,7 @@ mimeType: text/plain
 
 description:
 
-1 note — 1 open, 0 finished — opened 2026-08-17T01:55:55.112Z
+1 note — 1 open, 0 finished — opened <timestamp>
 
 ### scopes
 

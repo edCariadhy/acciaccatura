@@ -76,6 +76,17 @@ const byName = <T extends { name: string }>(items: readonly T[]): T[] =>
   [...items].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
 /**
+ * Blank out anything that changes by itself.
+ *
+ * The set listing carries `openedAt`, which is a different string every run —
+ * a golden file holding one would go red on its own and teach everyone to
+ * update it without reading it, which is the one failure this test cannot
+ * afford. The shape stays pinned; only the moving part is masked.
+ */
+const steady = (text: string): string =>
+  text.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<timestamp>");
+
+/**
  * Everything an agent can see, as text.
  *
  * Written in reading order rather than as raw JSON, because the thing being
@@ -137,7 +148,7 @@ async function describeSurface(client: Client): Promise<string> {
     out.push(`message, for a set named ${GOLDEN_SCOPE} holding one open note:`, "", text, "");
   }
 
-  return `${out.join("\n").trimEnd()}\n`;
+  return `${steady(out.join("\n").trimEnd())}\n`;
 }
 
 describe("the published surface", () => {
