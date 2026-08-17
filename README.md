@@ -129,6 +129,31 @@ Build, then register the server with any MCP-capable agent. With Claude Code:
 claude mcp add acciaccatura --env ACCIACCATURA_WORKSPACE="$(pwd)" -- node "$(pwd)/packages/mcp-server/dist/index.js"
 ```
 
+Other clients — Cursor, Google Antigravity, and anything else that reads the common
+`mcpServers` config shape — take the same server as JSON instead of a CLI command:
+
+```json
+{
+  "mcpServers": {
+    "acciaccatura": {
+      "command": "node",
+      "args": ["/absolute/path/to/acciaccatura/packages/mcp-server/dist/index.js"],
+      "env": { "ACCIACCATURA_WORKSPACE": "/absolute/path/to/your/workspace" }
+    }
+  }
+}
+```
+
+Where that JSON goes depends on the client:
+
+| Client | File |
+| --- | --- |
+| Cursor | `.cursor/mcp.json` (this project only) or `~/.cursor/mcp.json` (every project) |
+| Google Antigravity | `.agents/mcp_config.json` (this project only) or `~/.gemini/config/mcp_config.json` (every project) |
+
+Both paths must be absolute — unlike the Claude Code command above, this JSON has no shell to
+expand `$(pwd)` for you.
+
 Tools exposed: `get_annotations` (bounded, ranked, drift-reported lookup), `annotate_code`
 (persist a note), `remove_annotation` (drop an obsolete note). See
 [packages/mcp-server](packages/mcp-server/README.md) for configuration.
