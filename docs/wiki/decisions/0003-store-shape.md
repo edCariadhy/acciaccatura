@@ -1,7 +1,7 @@
 ---
 type: decision
 title: 0003 — What shape the store should be, so two writers cannot lose a note
-description: Five layouts weighed with measurements, and why one writer per file is the one that removes the conflict rather than excluding it.
+description: Layouts weighed with measurements, and why the two note lifetimes want two shapes rather than one shape that serves neither.
 status: proposed
 date: 2026-08-17
 ---
@@ -79,7 +79,7 @@ Costs: cold read 38 ms at 2,000 notes versus 2.4 ms — 16× worse, because it i
 2,000 file reads. A directory of thousands of files is unpleasant to browse.
 Multi-note operations like `resolveScope` become many writes.
 
-### 5. One file per writer, merged on read — **proposed**
+### 5. One file per writer, merged on read — **rejected on lifetime, see below**
 
 Each writing session owns exactly one file, named by an id it generates at
 startup. Readers merge every file and keep the newest record per id.
@@ -115,11 +115,54 @@ servers are spawned per client session so several write `agent.json`, and two
 VS Code windows on one workspace both write `human.json`. The partition key has
 to be a per-session identity.
 
+## Red team, and what it changed
+
+Option 5 was the proposal until it was challenged on lifetime, and the challenge
+held. **It partitions by writer, and a writer's identity has nothing to do with
+how long a note lives.** One surviving standing-scope note pins its session file
+forever, so compaction stops being maintenance and becomes load-bearing. Worse,
+file count then grows with *sessions* — something a user cannot control by
+tidying, unlike note count. For a store that is committed, 200 files you chose
+is different from 500 files you got by opening the editor.
+
+The rule that falls out: **partition by lifetime, not by writer.**
+
+That reframes the whole question, because the two lifetimes in
+[../standards/storage-and-lifecycle.md](../standards/storage-and-lifecycle.md)
+want opposite things, and hunting for one shape to serve both is what made this
+hard:
+
+| | standing scopes | loose working notes |
+| --- | --- | --- |
+| lifetime | permanent, curated | short, swept |
+| churn | low | high |
+| read by | a person, in a diff | the sidebar and MCP |
+| file count | few, and bounded by how many tours exist | self-limiting, because sweeping removes them |
+| right shape | **one readable file per scope — what we already have** | per-note files, or a log |
+
+The "many files forever" objection is real and lands entirely on the standing
+half, which already has the right layout. It does not reach the short-lived
+half, because those files come and go with the notes.
+
 ## Decision
 
-**Proposed, not taken.** One file per writing session, merged on read, is the
-shape that removes the conflict instead of excluding it. The lock from
-[0001](0001-store-write-safety.md) stays, demoted to guarding same-note edits.
+**Proposed, not taken.** Leave standing scopes exactly as they are — one
+readable file per set is right for something a person curates and reviews in a
+diff. Change only the **loose-note bucket**, which is the high-churn,
+short-lived, unbounded one, and which today puts every unscoped note in a single
+file that gets rewritten in full on every write.
+
+Two steps, and the first is worth doing on its own:
+
+1. **Write only the files whose contents changed.** No format change. Measured
+   on a 2,000-note store, a scoped write drops from 1,256 KB across 7 files to
+   43.5 KB across 1, and two writers working on different sets stop colliding
+   entirely rather than always.
+2. **Then split the loose bucket**, once step 1 shows what is left. A loose
+   write still costs 1,100 KB, because every unscoped note shares one file.
+
+The lock from [0001](0001-store-write-safety.md) stays either way, demoted to
+guarding same-file edits.
 
 Not taken yet because the on-disk layout is a contract
 ([../standards/stable-contracts.md](../standards/stable-contracts.md)) and the
@@ -128,7 +171,16 @@ deliberately, before 1.0, not under pressure.
 
 ## Consequences
 
-- **Deletes need tombstones.** A person deleting a note held in another
+- **Two shapes means two code paths**, and a note moving between loose and
+  scoped changes shape. That move already exists and is already the awkward
+  case — it is what the gaining-file-before-losing-file ordering in
+  [../standards/storage-and-lifecycle.md](../standards/storage-and-lifecycle.md)
+  is for.
+- **Step 1 needs a way to know a file is unchanged.** Comparing serialised bytes
+  before writing is the cheap version and is exact.
+- If the loose bucket later becomes per-note files, these apply:
+- **Deletes need tombstones** (only if the loose bucket becomes per-writer, not
+  if it becomes per-note — per-note deletes are `rm`)**.** A person deleting a note held in another
   session's file cannot edit that file, so it writes a tombstone. A tombstone
   may only be dropped once no writer file still carries that id, or the note
   resurrects. Compaction reads everything anyway, so it is the same pass.

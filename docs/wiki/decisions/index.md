@@ -49,4 +49,4 @@ the reasoning at the time is what a reader needs, including where it was wrong.
 |---|---|---|
 | [0001](0001-store-write-safety.md) | One writer at a time, by lock, across processes | accepted |
 | [0002](0002-procedures-as-prompts.md) | Procedures ship as MCP prompts, not as a skill | accepted |
-| [0003](0003-store-shape.md) | One file per writer, so two writers cannot collide | **proposed** |
+| [0003](0003-store-shape.md) | Partition by lifetime: leave standing sets alone, change the loose bucket | **proposed** |
