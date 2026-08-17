@@ -12,13 +12,21 @@ so context you leave for an agent isn't locked to one IDE.
 
 ## What it does
 
-- **Annotate a selection.** Select code, run **Acciaccatura: Annotate Selection**, and write a
-  note. It's saved locally to `.acciaccatura/annotations.json` in the workspace.
+- **Annotate a selection, a single line, or just the caret.** Select code — or place the caret
+  with nothing selected — and run **Acciaccatura: Annotate Selection** from the Command Palette
+  or a right-click in the editor. It's saved locally to `.acciaccatura/annotations.json` in the
+  workspace.
 - **See notes in the gutter.** Annotated lines get a gutter icon; hover it for the note body and
   the author's trust level.
 - **Manage notes from the sidebar.** The Acciaccatura activity-bar view lists every annotation,
   grouped by file. Right-click to delete a note, or promote an agent-suggested note to
   authoritative once you've reviewed it.
+- **Close the loop.** Mark a note done once its work is finished, reopen it if that was wrong,
+  and clear out finished notes when they're safe to delete. **How Old Are My Notes?** shows how
+  long open notes have waited and finished notes have been sitting around.
+- **Group notes into a named set.** A *scope* is a named, ordered set of notes — a PR review or
+  an onboarding tour, not just notes scattered across files. Check a set's status, add to it, or
+  close it from the sidebar.
 - **Degrades loudly, never silently.** If code moves, the extension re-anchors the note
   automatically. If it can't — the code was deleted or changed beyond recognition — you get a
   clear warning instead of a note quietly pointing at the wrong lines.
@@ -44,8 +52,9 @@ note is stale, wrong, or missing.
 
 ## Privacy
 
-Notes are stored locally in the workspace (`.acciaccatura/annotations.json`, gitignored by
-default). Nothing leaves your machine unless you choose to share the file yourself.
+Notes are stored locally in the workspace (`.acciaccatura/annotations.json`), committed by
+default so a PR's notes reach the reviewer the same way the code does. Nothing is sent over the
+network — sharing a note means sharing that file, and that's your call, not the extension's.
 
 ## Status
 

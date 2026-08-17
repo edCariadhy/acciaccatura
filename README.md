@@ -26,6 +26,44 @@ reads the same intent, regardless of editor.
 4. Each note is anchored to a line range with a captured snapshot, so when the code moves the
    agent is told the note may have **drifted** rather than being quietly misled.
 
+## Install
+
+Acciaccatura is not yet on the VS Code Marketplace. Build a `.vsix` from source and install it:
+
+```bash
+git clone https://github.com/edCariadhy/acciaccatura.git
+cd acciaccatura
+npm install
+npm run build                              # core → mcp-server + extension, in that order
+npm run package --workspace acciaccatura   # writes packages/extension/acciaccatura-<version>.vsix
+code --install-extension packages/extension/acciaccatura-*.vsix
+```
+
+Reload VS Code, open a workspace, and run **Acciaccatura: Annotate Selection** (Command Palette,
+or right-click in the editor) to confirm it's active. To also let agents read and write notes,
+register the MCP server — see [Use the MCP server](#use-the-mcp-server) below.
+
+Working on the extension itself instead of just using it? See [Develop](#develop) — press **F5**
+to run it from source without packaging anything.
+
+## Features
+
+- **Capture a note** on a selection, a single line, or just the caret — no need to select text
+  first. Reach it from the Command Palette or a right-click in the editor
+  (**Acciaccatura: Annotate Selection**).
+- **See notes without leaving the file**: a gutter icon and hover tooltip on every annotated
+  line. A note that no longer matches the code gets a loud warning, not a silent guess.
+- **Review from the sidebar**: notes are grouped by file, so you can read, delete, or promote an
+  agent's suggestion to authoritative in one place.
+- **Close the loop**: mark a note done once its work is finished, reopen it if that was wrong,
+  and clear out finished notes when they're safe to delete. **How Old Are My Notes?** shows how
+  long open notes have waited and finished notes have been sitting around.
+- **Group notes into a named set** (a *scope*) with its own order — a PR review or an onboarding
+  tour, not just notes scattered across files. Check a set's status, add a note to it, or close
+  it from the sidebar.
+- **Stay in sync**: the sidebar and gutter redraw when the shared store changes, including a
+  note an agent just wrote over MCP while you're sitting in a different file.
+
 ## Design principles
 
 These are strict rules, not just suggestions:
