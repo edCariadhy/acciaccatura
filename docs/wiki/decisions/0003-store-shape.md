@@ -2,13 +2,13 @@
 type: decision
 title: 0003 — What shape the store should be, so two writers cannot lose a note
 description: Layouts weighed with measurements, and why the two note lifetimes want two shapes rather than one shape that serves neither.
-status: proposed
+status: accepted
 date: 2026-08-17
 ---
 
 # 0003 — What shape the store should be, so two writers cannot lose a note
 
-**Status:** proposed · **Date:** 2026-08-17
+**Status:** accepted · **Date:** 2026-08-17 · **Built:** 2026-08-17
 
 Follows [0001](0001-store-write-safety.md), which stopped the bleeding with a
 lock. This asks the question that lock deferred: if the layout itself made a
@@ -69,15 +69,16 @@ The instinct behind it is right, though — *one queue should own writes*. The
 mistake is assuming a **process** has to host it. `O_APPEND` is that queue, and
 the kernel hosts it.
 
-### 4. One file per note
+### 4. One file per note — **taken for the loose bucket, see below**
 
 A delete is `rm <id>.json`. No tombstones, no merge, no compaction. Write
 amplification 1×. Two writers adding different notes cannot touch the same
 path, so the catastrophic case is impossible rather than excluded.
 
-Costs: cold read 38 ms at 2,000 notes versus 2.4 ms — 16× worse, because it is
-2,000 file reads. A directory of thousands of files is unpleasant to browse.
-Multi-note operations like `resolveScope` become many writes.
+Costs: cold read regresses as note count grows — see the built numbers below.
+A directory of thousands of files is unpleasant to browse. Multi-note
+operations like `resolveScope` become many writes (already true today for a
+note that spans sets).
 
 ### 5. One file per writer, merged on read — **rejected on lifetime, see below**
 
@@ -146,68 +147,101 @@ half, because those files come and go with the notes.
 
 ## Decision
 
-**Proposed, not taken.** Leave standing scopes exactly as they are — one
+**Taken, in two steps.** Standing scopes are left exactly as they were — one
 readable file per set is right for something a person curates and reviews in a
-diff. Change only the **loose-note bucket**, which is the high-churn,
-short-lived, unbounded one, and which today puts every unscoped note in a single
-file that gets rewritten in full on every write.
-
-Two steps, and the first is worth doing on its own:
+diff. The **loose-note bucket** — high-churn, short-lived, unbounded — is the
+one that changed, because it put every unscoped note in a single file that got
+rewritten in full on every write.
 
 1. **Write only the files whose contents changed.** No format change. Measured
    on a 2,000-note store, a scoped write drops from 1,256 KB across 7 files to
    43.5 KB across 1, and two writers working on different sets stop colliding
-   entirely rather than always. **Built 2026-08-17.** A file is serialised
-   first and written only when those exact bytes differ from what it already
-   holds, so the check can never skip a file that needed saving.
-2. **Then split the loose bucket**, once step 1 shows what is left. A loose
-   write still costs 1,100 KB, because every unscoped note shares one file.
+   entirely rather than always. **Built.** A file is serialised first and
+   written only when those exact bytes differ from what it already holds, so
+   the check can never skip a file that needed saving.
+2. **Split the loose bucket into option 4: one file per note.** **Built.**
+   Confirmed against a real red team of option 5 first (below) rather than
+   assumed — a note's id is a UUID handed out internally, so it needs no
+   escaping the way a typed set name does, and a note file is *deleted* once
+   its note is gone rather than emptied like a scope file: there is nothing for
+   an empty note file to mean, and a tombstone for every note ever created is
+   exactly the git litter this was chosen to avoid.
 
-The lock from [0001](0001-store-write-safety.md) stays either way, demoted to
-guarding same-file edits.
+The lock from [0001](0001-store-write-safety.md) stays, demoted to guarding
+same-file edits and anything that writes without it.
 
-Not taken yet because the on-disk layout is a contract
-([../standards/stable-contracts.md](../standards/stable-contracts.md)) and the
-lock has already stopped the data loss. This is the shape to move to
-deliberately, before 1.0, not under pressure.
+### What building it actually measured
+
+The option-5 table above was a synthetic benchmark — parallel `readFile` calls,
+no integrity checking. Numbers from this repo's real store, after both steps:
+
+| loose notes | add one note | cold load |
+| --- | --- | --- |
+| 100 | 0.6 KB / 1 file, 2.9 ms | 2.6 ms |
+| 500 | 0.6 KB / 1 file, 14.9 ms | 13.1 ms |
+| 2,000 | 0.6 KB / 1 file, ~70 ms | ~60–70 ms |
+
+Write amplification is 1× exactly as predicted, at every count — a change to
+one note touches one file, full stop. Cold read grows with note count, worse
+than the ~38 ms option 4 originally cited, because that number timed a raw
+`Promise.all(readFile)` and the real store's `readWithMark` does three `stat`
+calls per file to detect a read landing mid-write — see
+[0001](0001-store-write-safety.md). At a realistic count this does not matter;
+past roughly 500 it is the cost of not having swept.
+
+**A real bug found in the process, not a rounding difference.** `#readFromDisk`
+read every file sequentially — harmless when there were only ever a handful of
+scope files, but it became the dominant cost the moment loose notes could
+number in the thousands: 165 ms cold at 2,000 notes before the fix below, not
+the ~65 ms in the table above. Reads are now issued with `Promise.all`; nothing
+depended on order, since each file's mark and digest are keyed by its own path
+and the newer-wins merge that combines them is commutative. Worth remembering
+alongside 0001's own lesson: measuring the change you meant to make is not the
+same as measuring the whole path it runs on.
 
 ## Consequences
 
 - **Two shapes means two code paths**, and a note moving between loose and
-  scoped changes shape. That move already exists and is already the awkward
-  case — it is what the gaining-file-before-losing-file ordering in
+  scoped changes shape. That move already existed for scope-to-scope moves —
+  see the gaining-before-losing ordering in
   [../standards/storage-and-lifecycle.md](../standards/storage-and-lifecycle.md)
-  is for.
-- **Step 1 needs a way to know a file is unchanged.** Comparing serialised bytes
-  before writing is the cheap version and is exact.
-- If the loose bucket later becomes per-note files, these apply:
-- **Deletes need tombstones** (only if the loose bucket becomes per-writer, not
-  if it becomes per-note — per-note deletes are `rm`)**.** A person deleting a note held in another
-  session's file cannot edit that file, so it writes a tombstone. A tombstone
-  may only be dropped once no writer file still carries that id, or the note
-  resurrects. Compaction reads everything anyway, so it is the same pass.
-- **Files grow with sessions**, so compaction is needed — for files, not for
-  notes. A cap on notes is a separate question, and if one exists it should warn
-  and never refuse: a note you could not save fails the same rule as a note that
-  was lost, only more loudly.
-- **Compaction is lossless and idempotent even when it is wrong.** Fold in a
-  session's file believing it dead, and if that session is alive and writes
-  again you get duplicates — which heal on the next read, because the merge
-  keeps the newest per id. Getting liveness wrong costs nothing. That property
-  is what makes the whole design tractable, and it is rare in this class.
+  — and now has a second variant, gaining-before-*deleting*, for a note
+  entering or leaving the loose bucket. `notes-crash.test.ts` proves the second
+  one the same way `shard-crash.test.ts` proves the first: by mocking the write
+  a crash would interrupt and checking the note survives on disk.
+- **No tombstones.** Per-note files were chosen over per-writer files
+  specifically to avoid them — a delete is `rm`, full stop. This is the actual
+  payoff of the choice; option 5 would have needed them.
+- **Deletes need the same conflict check writes do**, extended rather than
+  duplicated: `#checkUnchanged` now covers files about to be deleted as well as
+  files about to be written, so a delete raced by an external write is caught
+  the same way a write raced by one is.
+- **Reads must be issued in parallel**, or note-file count becomes the
+  bottleneck it was measured to be — see "what building it actually measured"
+  above. This is now load-bearing, not incidental: a future change to
+  `#readFromDisk` that goes back to a sequential loop would quietly reintroduce
+  the 165 ms figure at scale.
+- **A cap on notes is a separate question from any of this.** What grows here
+  is loose-note *files*, and `sweepResolved` is what bounds that — never a
+  count cap that refuses a write. A note you could not save fails the same rule
+  as a note that was lost, only louder.
 - **Git gets better.** Separate files cannot conflict, and a diff shows which
   notes changed rather than a churned rewrite of one large file.
-- **Reading one file no longer shows the store.** The sidebar and the MCP
+- **Reading one file no longer shows the whole store.** The sidebar and the MCP
   surface are the reading surfaces, so this is a small loss, but it is a loss.
 
 ## What would change this
 
-- **Take it** when write amplification or lock contention shows up in practice,
-  or when a second human annotating the same repo makes clean git merges matter.
-  Decide before 1.0, because it is a format change.
-- **Prefer option 4** if tombstones turn out worse in practice than many files.
-  Per-note files pay no tombstone tax at all, and that is their real advantage.
-- **Go to option 2 or a CRDT** only if the store ever has to replicate across
-  machines. At that point this stops being a layout and becomes replication, and
-  merge-by-newest stops being sufficient — last-writer-wins on a note body is
-  fine, on anything critical it is not.
+- **Go to option 2, a real queue (option 3, itself collapsing into option 2),
+  or a CRDT** only if the store ever has to replicate across machines. At that
+  point this stops being a local-file layout question and becomes replication,
+  and merge-by-newest stops being sufficient — last-writer-wins on a note body
+  is fine, on anything critical it is not.
+- **Revisit per-note files** if a workspace's `notes/` directory in practice
+  grows large enough that cold-read cost (see the table above) becomes a
+  complaint despite sweeping — the fix at that point is more aggressive
+  sweeping defaults, not a different file shape.
+- **Give scope files the same never-empty-if-unwritten treatment note files
+  get** only if tombstoning ever turns out to matter for a set too — nothing
+  today suggests it does, since a set is meant to be reviewed as a whole and an
+  empty one is informative rather than litter.

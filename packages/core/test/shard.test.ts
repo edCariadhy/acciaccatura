@@ -8,14 +8,18 @@ import { AnnotationStore } from "../src/store.js";
 import type { NewAnnotation } from "../src/types.js";
 
 /**
- * One file per named set.
+ * One file per named set, and one file per loose note.
  *
  * A set is the unit you hand over, end, and review, so it is the unit the store
  * is cut along: a pull request's notes travel with the diff as one file, and two
  * pull requests touching different sets do not meet in a merge conflict.
  *
- * Notes in no set stay in `annotations.json`, which is also what an older store
- * file is, so an old store still loads.
+ * A note in no set is the opposite: short-lived by design, so it gets a file of
+ * its own under `notes/`, rather than sharing one with every other loose note —
+ * see decisions/0003-store-shape.md. `annotations.json` is what every store
+ * looked like before either of these existed, so an old store still loads, and
+ * whatever it holds moves out to a scope file or a note file the next time
+ * anything is written.
  */
 
 let dir: string;
@@ -61,12 +65,12 @@ afterEach(async () => {
 });
 
 describe("where a note is written", () => {
-  it("keeps a note in no set in the store file", async () => {
+  it("gives a note in no set a file of its own", async () => {
     const store = open();
     await store.load();
-    await store.add(draft());
+    const note = await store.add(draft());
 
-    expect(await filesOnDisk()).toEqual(["annotations.json"]);
+    expect(await filesOnDisk()).toEqual([`notes/${note.id}.json`]);
   });
 
   it("gives each named set a file of its own", async () => {
@@ -82,15 +86,15 @@ describe("where a note is written", () => {
     ]);
   });
 
-  it("does not leave a scoped note in the shared file", async () => {
+  it("does not leave a scoped note in its own note file", async () => {
     const store = open();
     await store.load();
     await store.add(draft({ scope: "pr/142" }));
-    await store.add(draft());
+    const loose = await store.add(draft());
 
-    const shared = await readJson("annotations.json");
-    expect(shared.annotations).toHaveLength(1);
-    expect(shared.annotations[0]?.scope).toBeUndefined();
+    const alone = await readJson(`notes/${loose.id}.json`);
+    expect(alone.annotations).toHaveLength(1);
+    expect(alone.annotations[0]?.scope).toBeUndefined();
   });
 
   it("reads every set back as one store", async () => {
@@ -131,14 +135,15 @@ describe("moving a note between sets", () => {
     expect(moved[0]?.id).toBe(note.id);
   });
 
-  it("moves a note out of every set back into the store file", async () => {
+  it("moves a note out of every set into a file of its own", async () => {
     const store = open();
     await store.load();
     const note = await store.add(draft({ scope: "pr/142" }));
 
     await store.update(note.id, { scope: null });
 
-    expect((await readJson("annotations.json")).annotations).toHaveLength(1);
+    const alone = await readJson(`notes/${note.id}.json`);
+    expect(alone.annotations).toHaveLength(1);
     expect((await readJson("scopes/pr__142.json")).annotations).toHaveLength(0);
   });
 
