@@ -53,6 +53,9 @@ afterEach(async () => {
  */
 const GOLDEN_SCOPE = "pr/142";
 
+/** Root of the resource URIs, mirrored from the server. */
+const SCOPES_URI = "acciaccatura://scopes";
+
 /** Connect a client to a server over the same path an agent host uses. */
 async function connect(): Promise<Client> {
   const store = new AnnotationStore(join(root, ".acciaccatura", "annotations.json"));
@@ -125,6 +128,15 @@ async function describeSurface(client: Client): Promise<string> {
     out.push(`### ${t.name} (template)`, "");
     out.push(`uriTemplate: ${t.uriTemplate}`, `mimeType: ${t.mimeType ?? "(none)"}`, "");
     out.push("description:", "", t.description ?? "(none)", "");
+  }
+
+  // What a resource actually says, not only how it is advertised. A document an
+  // agent reads is as much the contract as the description that led it there,
+  // and the caveat about positions being where a note was *written* lives in
+  // here rather than in any description.
+  for (const uri of [SCOPES_URI, `${SCOPES_URI}/${GOLDEN_SCOPE}`]) {
+    const read = await client.readResource({ uri });
+    out.push(`### contents of ${uri}`, "", String(read.contents[0]?.text ?? "(none)"), "");
   }
 
   const { prompts } = await client.listPrompts();

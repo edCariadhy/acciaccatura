@@ -298,6 +298,24 @@ description:
 
 A set read as a document: its notes in the sequence they were meant to be read. Says where each note was written, not where the code is now — call get_annotations with the same scope for current positions and drift.
 
+### contents of acciaccatura://scopes
+
+Named sets in this workspace:
+
+pr/142 — 1 note — 1 open, 0 finished — opened <timestamp>
+
+Read one at acciaccatura://scopes/<name>. For where the code sits now and whether it drifted, call get_annotations or scope_status with the set's name.
+
+### contents of acciaccatura://scopes/pr/142
+
+pr/142 — 1 note — 1 open, 0 finished
+Opened <timestamp>, last touched <timestamp>
+
+This is the set as it was written. Positions below are where each note was saved, not where the code is now — call get_annotations with scope "pr/142" for current positions and drift.
+
+1. src/pay.ts (written at 1-1) [agent/suggested]
+a note, so the set exists
+
 ## Prompts (3)
 
 ### onboarding_tour
