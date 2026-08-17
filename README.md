@@ -121,6 +121,24 @@ npm run test:e2e --workspace acciaccatura
 To try the extension interactively, open the repo in VS Code and press **F5** ("Run
 Extension"), then run **Acciaccatura: Annotate Selection** on a selection.
 
+## Release
+
+Bump the `version` in `packages/extension/package.json`, merge that, then tag the merge commit —
+[.github/workflows/publish.yml](.github/workflows/publish.yml) does the rest:
+
+```bash
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+The workflow refuses to run if the tag doesn't match the version it just bumped, so a stale or
+mistyped tag fails loudly instead of shipping the wrong build. It publishes to
+[Open VSX](https://open-vsx.org) — reaching Cursor, Antigravity, and anything else that reads
+that registry — using an `OVSX_PAT` repository secret (a personal access token from
+[open-vsx.org](https://open-vsx.org), under the `acciaccatura` namespace). Nothing publishes to
+the Microsoft VS Code Marketplace yet — that would be a second job in the same workflow, gated on
+its own `VSCE_PAT` secret, added when it's actually needed.
+
 ## Use the MCP server
 
 Build, then register the server with any MCP-capable agent. With Claude Code:

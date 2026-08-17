@@ -184,6 +184,8 @@
     "pretest:e2e": "npm run build",
     "package": "vsce package --no-dependencies",
     "prepackage": "npm run build",
+    "publish:ovsx": "ovsx publish acciaccatura-*.vsix",
+    "prepublish:ovsx": "npm run package",
     "clean": "rm -rf out"
   },
   "devDependencies": {
@@ -195,6 +197,7 @@
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.2",
+    "ovsx": "^1.1.1",
     "typescript": "^5.6.3",
     "vitest": "^3.2.7"
   }
