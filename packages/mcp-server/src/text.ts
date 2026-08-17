@@ -7,6 +7,15 @@
  * were unreadable exactly where they get maintained, and a description nobody
  * can read is one that quietly drifts from the behaviour it describes.
  *
+ * **One part per sentence.** Breaking at a column instead was tried first and
+ * was barely an improvement: it turned one 807-character line into nine
+ * 92-character fragments that split mid-clause, so a reader still had to carry
+ * a thought across a quote boundary. It made the line-length number look better
+ * and left the reading the same. A long sentence may run past any column you
+ * like — a whole sentence at 110 characters reads better than a fragment at 92
+ * — and only a sentence long enough to be unwieldy is broken further, at a
+ * semicolon, colon or dash the writer had already paused on.
+ *
  * Parts are joined with a single space, so no part carries a leading or
  * trailing space of its own. Nothing here changes the text an agent sees, and
  * that is not a promise to take on trust: the golden file in
