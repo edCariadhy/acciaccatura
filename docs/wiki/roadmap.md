@@ -48,6 +48,7 @@ The foundational architecture is in place and the critical paths are working and
 - [x] **Reopen:** finishing a note can be undone.
 - [x] **Delete Finished Notes:** `sweepResolved` takes a cutoff from the caller, never touches an open note, and never runs on a timer.
 - [x] **Age reporting:** `reportAge` groups open notes by how long they have waited and finished notes by how long they have been safe to delete — counts and buckets, never a score, and a date it cannot read is reported rather than dropped. The editor has **How Old Are My Notes?**, and the delete confirmation now says the ages of what it would take, not only the count. Deleting is a person's decision, so this did not earn an MCP tool; agents get the part they can act on, `get_annotations` saying how many days a note has been open.
+- [ ] **Reply capability:** a note can only be resolved or deleted today, not answered in place — no way for the other writer (human or agent) to leave a response without opening a second, unrelated note. Real scope: threading plus a resolved-per-reply state means new store schema fields, and the store schema freezes first per [standards/stable-contracts.md](standards/stable-contracts.md) — needs a decision record before it's built, not just an implementation.
 
 ### Phase 4: Scopes — the next trajectory
 *A named set of notes, with an order and a lifetime of its own. Decided in [standards/scopes.md](standards/scopes.md); it is what makes PR review and onboarding expressible.*
@@ -67,6 +68,15 @@ The foundational architecture is in place and the critical paths are working and
 
 ### Phase 6: Freshness
 - [x] **Watch the store:** the editor now redraws when the store changes, so a note an agent writes while you sit in one file appears without you moving. The watching is a seam (`watch.ts`, no `vscode` import) with three rules, each a way this goes wrong on a shared host: wait for quiet, so a burst of twenty writes costs one redraw and not twenty; never overlap, because a redraw reads every annotated file and two at once could draw from a store only half re-read; survive a failure, because a store read mid-write is broken JSON and the next event is what fixes it. The glob is `.acciaccatura/**/*.json`, so it already covers the set files under `scopes/` and each loose note's own file under `notes/` with no change of its own; the store's `.tmp` files are not matched, so one write is not seen twice. The **server** still has no watcher — see [standards/mcp-surface.md](standards/mcp-surface.md) for why that was left.
+
+### Phase 6b: Tree view state across a refresh
+*Ordering itself is deterministic and reload-stable (store order, alphabetical scopes, `bySequence`) — the gap is UI state, not sort order.*
+- [ ] **Stable tree item identity:** `watchStore`'s redraw fires `_onDidChangeTreeData` with no element (full-tree rebuild), and none of `AnnotationTreeItem`/`ScopeTreeItem`/`FileTreeItem` sets `TreeItem.id`. VS Code has nothing to key expand/collapse or selection state to across a watch-triggered refresh — an agent writing a note while a file is open in the sidebar can collapse or deselect what the person had open. `FileTreeItem` also rebuilds hardcoded `Expanded` and `ScopeTreeItem` hardcoded `Collapsed` every time, so a freshly-recreated item ignores whatever state it had before the refresh.
+
+### Phase 6c: Capture, beyond the command palette
+*`annotateSelection` already handles a single-line range fine — `annotationFromSelection` only requires `endLine >= startLine` ([selection.ts](../../packages/core/src/selection.ts)) — these are entry points into the same seam, not a new write path.*
+- [x] **Editor context menu entry:** `acciaccatura.annotateSelection` now has an `editor/context` contribution (`when: editorTextFocus`), so right-click-to-annotate works, not just command-palette/keybinding. Declarative VS Code config only — no logic to unit-test, so this one shipped without a red/green cycle; e2e is the only harness that could exercise it, and it wasn't run for a menu wiring this small.
+- [x] **Caret with no selection:** `selectionFrom` no longer refuses an empty selection. The line-range decision moved into a pure `resolveCaptureLines` ([lineRange.ts](../../packages/extension/src/lineRange.ts)), unit-tested test-first (including the caret-falls-back-to-its-own-line case that used to be refused) — `extension.ts` stays a thin `vscode` wrapper around it, matching the existing `capture.ts`/`selection.ts` split between pure logic and editor glue.
 
 ### Phase 7: Storage evolution — parked, with reasons
 *We build a marketplace extension, so no native bindings: any future store must be pure JS or Wasm, never a pre-compiled binary per OS and architecture.*

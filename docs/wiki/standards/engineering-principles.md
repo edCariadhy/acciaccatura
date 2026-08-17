@@ -73,6 +73,31 @@ Price every added dependency, abstraction, process, or storage layer. Reach for
 concrete code and the rule of three before extracting an interface: you learn the
 right seam by building the second implementation, not by imagining it.
 
+## Write the test first — a heuristic, not a gate
+
+Nothing here blocks a commit that skips this. It only works if you actually do it:
+write the test before the code, watch it fail for the reason you expect, then make
+it pass. Treat "I'll add tests after" the same as "I'll add docs after" — it does
+not happen, and a test written against code that already works tends to describe
+what the code does, not what it must do.
+
+The real obstacle is not remembering to do this — it is that some code has no fast
+place to go red. `extension.ts` imports `vscode` directly, and this repo keeps
+`vscode`-coupled code out of the unit suite on purpose (see `vitest.config.ts` in
+`packages/extension`): the only harness that reaches it is the real, slow
+`@vscode/test-electron` e2e suite. Facing that, do not skip the test — pull the
+decision that actually matters out into a plain-data function next to the glue, the
+same split `capture.ts`/`selection.ts` already draw, so it can go red in a unit
+test in milliseconds. `lineRange.ts`'s `resolveCaptureLines` is a worked example:
+the bug was "a caret with no selection gets refused", and the fix was a pure
+function of `{startLine, endLine, endChar}` with no `vscode.Selection` in sight —
+`extension.ts` stays a thin wrapper that calls it.
+
+Some changes genuinely have no logic to red-first: a declarative `package.json`
+menu contribution, a rename, a config value. Say so plainly instead of pretending a
+test covered it — "no red/green cycle for this one, it's config" is a fine thing
+to write in a PR.
+
 ## A passing test is not a working test
 
 Tests here have repeatedly passed for a reason other than the one they claimed.
