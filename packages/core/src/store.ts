@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { fingerprint, normalizeSnapshot } from "./anchor.js";
+import { withStoreLock } from "./lock.js";
 import { indexScopes } from "./scope.js";
 import type { ScopeIndexEntry } from "./scope.js";
 import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel } from "./types.js";
@@ -104,6 +105,16 @@ export class AnnotationStore {
   /** Serialises this instance's writes; see {@link AnnotationStore.mutate}. */
   #writes: Promise<unknown> = Promise.resolve();
   #tempCounter = 0;
+  /**
+   * What each file looked like when this instance last read it.
+   *
+   * A second line behind {@link withStoreLock}, for anything that writes
+   * without taking the lock — an older build still running, or a person
+   * editing the file by hand. On its own it is not enough: it catches
+   * "somebody wrote before me", and the case that loses notes is "somebody is
+   * writing at the same moment as me".
+   */
+  #seen = new Map<string, string>();
 
   constructor(path: string) {
     this.#path = path;
@@ -387,12 +398,28 @@ export class AnnotationStore {
    */
   async #mutate<T>(apply: (annotations: Annotation[]) => T): Promise<T> {
     this.#ensureLoaded();
-    const run = this.#writes.then(async () => {
-      await this.#readFromDisk();
-      const result = apply(this.#data.annotations);
-      await this.#persist();
-      return result;
-    });
+    const run = this.#writes.then(async () =>
+      // The queue above orders this process against itself. The lock orders it
+      // against the other one: everything from the read to the last rename
+      // happens with the store to ourselves. Reading outside the lock is what
+      // loses notes — the other writer saves between our read and our write,
+      // and we then save a list that never knew about it.
+      withStoreLock(this.#path, async () => {
+        for (let attempt = 1; ; attempt++) {
+          await this.#readFromDisk();
+          const result = apply(this.#data.annotations);
+          try {
+            await this.#persist();
+            return result;
+          } catch (err) {
+            if (!(err instanceof StoreChangedError) || attempt >= MAX_WRITE_ATTEMPTS) throw err;
+            // Reached only when something wrote without taking the lock.
+            // Redoing the work against what they left beats saving over them.
+            await new Promise((r) => setTimeout(r, Math.random() * RETRY_BACKOFF_MS));
+          }
+        }
+      }),
+    );
     // Keep the chain alive even if this write fails, so one error does not
     // wedge every later write on this instance.
     this.#writes = run.catch(() => undefined);
@@ -410,8 +437,14 @@ export class AnnotationStore {
     const files = [this.#path, ...(await this.#scopeFiles())];
     const byId = new Map<string, Annotation>();
 
+    this.#seen.clear();
     for (const file of files) {
-      for (const note of await readAnnotations(file)) {
+      const { annotations, mark } = await readWithMark(file);
+      // The mark belongs to the bytes just read, not to the file a moment
+      // later, or a write landing in between would be invisible to the check
+      // that exists to catch exactly that.
+      this.#seen.set(file, mark);
+      for (const note of annotations) {
         const seen = byId.get(note.id);
         if (!seen || seen.updatedAt < note.updatedAt) byId.set(note.id, note);
       }
@@ -464,8 +497,27 @@ export class AnnotationStore {
     const onDisk = [...(await this.#scopeFiles()), ...((await exists(this.#path)) ? [this.#path] : [])];
     const emptied = onDisk.filter((f) => !wanted.has(f));
 
+    // Check every file before writing any of them. Checking as we go could
+    // leave half a change applied, which is worse than the conflict itself:
+    // the retry would then run against a store we had already half rewritten.
+    await this.#checkUnchanged([...wanted.keys(), ...emptied]);
+
     for (const [file, annotations] of wanted) await this.#write(file, annotations);
     for (const file of emptied) await this.#write(file, []);
+  }
+
+  /**
+   * Refuse to write over anything that moved since it was read.
+   *
+   * A file we never read counts as moved: another writer creating a set
+   * between our read and our write is the case where we would otherwise empty
+   * their brand-new file, having partitioned a list that never knew about it.
+   */
+  async #checkUnchanged(files: readonly string[]): Promise<void> {
+    for (const file of new Set(files)) {
+      const now = await markOf(file);
+      if (now !== (this.#seen.get(file) ?? ABSENT)) throw new StoreChangedError(file);
+    }
   }
 
   /**
@@ -508,6 +560,10 @@ export class AnnotationStore {
     try {
       await writeFile(temp, `${JSON.stringify(contents, null, 2)}\n`, "utf8");
       await rename(temp, file);
+      // This instance is now the last writer, so what it just wrote is what it
+      // has seen. Without this the next file in the same batch would report a
+      // conflict against us.
+      this.#seen.set(file, await markOf(file));
     } catch (err) {
       await rm(temp, { force: true });
       throw err;
@@ -519,6 +575,67 @@ export class AnnotationStore {
 const SCOPE_DIR = "scopes";
 
 /** Whether a path is readable. */
+/** How many times a write redoes itself before giving up. */
+const MAX_WRITE_ATTEMPTS = 8;
+
+/** Upper bound on the pause between attempts, in milliseconds. */
+const RETRY_BACKOFF_MS = 25;
+
+/** The mark of a file that is not there. */
+const ABSENT = "absent";
+
+/**
+ * Raised when a file changed between being read and being written over.
+ * Internal to the retry in {@link AnnotationStore.mutate}: a caller never sees
+ * it, because losing that race is not a failure, it is a reason to redo the
+ * work against what the other writer left.
+ */
+class StoreChangedError extends Error {
+  readonly file: string;
+
+  constructor(file: string) {
+    super(`${file} changed while it was being written`);
+    this.name = "StoreChangedError";
+    this.file = file;
+  }
+}
+
+/**
+ * What a file looks like right now, or {@link ABSENT}.
+ *
+ * The inode is the load-bearing part. Every write lands by renaming a temp
+ * file into place, and a rename replaces the inode, so a changed inode means
+ * somebody wrote — with no dependence on clock resolution, which two writes in
+ * the same millisecond would defeat.
+ */
+async function markOf(file: string): Promise<string> {
+  try {
+    const found = await stat(file);
+    return `${found.ino}:${found.size}:${found.mtimeMs}`;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    return ABSENT;
+  }
+}
+
+/**
+ * Read a file and say what it looked like, with the two guaranteed to match.
+ *
+ * Marking only after the read would describe a file that may already have been
+ * replaced, and the write check would then compare the new file against itself,
+ * pass, and save stale notes. Marking on both sides and insisting they agree is
+ * what ties the mark to the bytes in hand.
+ */
+async function readWithMark(file: string): Promise<{ annotations: Annotation[]; mark: string }> {
+  for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+    const before = await markOf(file);
+    const annotations = await readAnnotations(file);
+    const after = await markOf(file);
+    if (before === after) return { annotations, mark: after };
+  }
+  throw new Error(`${file} is being rewritten faster than it can be read`);
+}
+
 async function exists(file: string): Promise<boolean> {
   try {
     await readFile(file, "utf8");

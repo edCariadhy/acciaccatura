@@ -177,13 +177,35 @@ set you hand over, end, and review.
 Sharding narrows these problems; it does not by itself solve them, and a change
 that ignores them re-introduces the defect at a smaller scale.
 
-- **Read before write, then write atomically.** Two processes currently each
-  hold the whole store in memory and rewrite it, so the last writer silently
-  destroys the other's work — reproduced with a human note erased by an agent
-  note. Every write must re-read the shard, merge, and rename a temp file into
-  place. **Reads queue with writes too**: a re-read that lands in the middle of a
-  write replaces the list that write is about to save. Two MCP tool calls
-  arriving together lost a finished note this way, 3 times out of 3.
+- **One writer at a time, across processes.** Two processes each hold the whole
+  store in memory and rewrite it, so the last writer silently destroys the
+  other's work — reproduced with a human note erased by an agent note. **Fixed
+  2026-08-17**, and the fix is not the one this page used to prescribe.
+
+  Three things were tried, and only the third works:
+
+  1. *A write queue.* Ordering a process's own writes, with reads queued behind
+     them so a re-read cannot replace the list a write is about to save. Two
+     MCP tool calls arriving together lost a finished note 3 times out of 3
+     before this, and none after. It does nothing across processes.
+  2. *Re-read, then rename atomically* — what this page asked for. Implemented,
+     and still lost notes: it catches "somebody wrote **before** me", and the
+     case that loses notes is "somebody is writing **at the same moment** as
+     me". Two writers 40 ms apart fall into step, both read the same file, both
+     find it unchanged, both save. One writer's notes were lost in full, five
+     runs out of five.
+  3. *A real lock*, held from the read to the last rename. `wx` either creates
+     the lock file or fails, in one step the kernel will not split. Nothing
+     lost at two writers 40 ms apart, or at six writers flat out.
+
+  The optimistic check from (2) stays as a second line, for anything that
+  writes without taking the lock — an older build still running, or a person
+  editing the file by hand. A lock nobody has touched for ten seconds is taken
+  over, so a process that dies holding it cannot wedge the store.
+
+  The guarantee is kept by `test/two-processes.test.ts`, which spawns real
+  processes on purpose: two store instances inside one process share a write
+  queue and pass happily, which is the false assurance that let this survive.
 - **Never persist a re-anchor.** The capture is immutable; where a note
   currently sits is derived at read time. This removes the extra writes
   described above, and stops a note moving onto a near-copy of the code on
