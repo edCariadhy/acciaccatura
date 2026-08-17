@@ -46,6 +46,21 @@ register the MCP server — see [Use the MCP server](#use-the-mcp-server) below.
 Working on the extension itself instead of just using it? See [Develop](#develop) — press **F5**
 to run it from source without packaging anything.
 
+## Upgrade
+
+Rebuild and reinstall the same way. `code --install-extension` replaces an existing install
+automatically when the version differs — but this project doesn't bump
+`packages/extension/package.json`'s `version` on every change, so add `--force` or VS Code may
+decide the same version is already there and skip the reinstall:
+
+```bash
+git pull
+npm install
+npm run build
+npm run package --workspace acciaccatura
+code --install-extension packages/extension/acciaccatura-*.vsix --force
+```
+
 ## Features
 
 - **Capture a note** on a selection, a single line, or just the caret — no need to select text
