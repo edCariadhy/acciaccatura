@@ -64,6 +64,15 @@ describe("how one note reads in the sidebar", () => {
     expect(noteView(note({ body: "" }), SAME).label).toBe("Annotation");
   });
 
+  it("truncates a long line, not just a long note, so one paragraph without a break still fits", () => {
+    const oneLongLine = "why this exists: " + "reasoning ".repeat(20); // no "\n" at all
+    const view = noteView(note({ body: oneLongLine }), SAME);
+    expect(view.label.length).toBeLessThanOrEqual(61); // 60 chars + the ellipsis
+    expect(view.label.endsWith("…")).toBe(true);
+    // The reader isn't left guessing what was cut — the tooltip still has it all.
+    expect(view.tooltip).toBe(oneLongLine);
+  });
+
   it("shows where the code is now", () => {
     expect(noteView(note(), SAME).description).toBe("L10-L12");
   });
