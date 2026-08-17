@@ -203,6 +203,10 @@ that ignores them re-introduces the defect at a smaller scale.
   editing the file by hand. A lock nobody has touched for ten seconds is taken
   over, so a process that dies holding it cannot wedge the store.
 
+  Full reasoning, including the append-only log that was measured and not
+  taken, is in
+  [../decisions/0001-store-write-safety.md](../decisions/0001-store-write-safety.md).
+
   The guarantee is kept by `test/two-processes.test.ts`, which spawns real
   processes on purpose: two store instances inside one process share a write
   queue and pass happily, which is the false assurance that let this survive.

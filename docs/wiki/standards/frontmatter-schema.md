@@ -13,7 +13,7 @@ The conformance **floor** for `docs/wiki/`, enforced by `npm run docs:check`
 
 1. **Frontmatter `type`.** Every non-reserved `.md` file starts with a YAML
    frontmatter block containing a non-empty `type`. Allowed values:
-   `standard`, `reference`, `guide`, `log`.
+   `standard`, `reference`, `guide`, `log`, `decision`.
 2. **Reserved files.** `index.md` (section router) and `log.md` are exempt from
    the `type` requirement.
 3. **Portable relative links.** Every internal markdown link is **relative** (no
