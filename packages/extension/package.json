@@ -124,6 +124,13 @@
           "when": "false"
         }
       ],
+      "editor/context": [
+        {
+          "command": "acciaccatura.annotateSelection",
+          "when": "editorTextFocus",
+          "group": "acciaccatura"
+        }
+      ],
       "view/title": [
         {
           "command": "acciaccatura.refreshTree",
