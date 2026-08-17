@@ -63,9 +63,10 @@ export function activate(context: vscode.ExtensionContext): void {
       );
 
       // Watch the store, so a note an agent writes while you sit in one file
-      // does not wait for you to switch files to appear. The glob covers the
-      // set files under scopes/ as well as annotations.json; the store's temp
-      // files end in .tmp and are not matched, so a write is not seen twice.
+      // does not wait for you to switch files to appear. The glob covers
+      // annotations.json, the set files under scopes/, and each loose note's
+      // own file under notes/; the store's temp files end in .tmp and are not
+      // matched, so a write is not seen twice.
       // Non-null because the store exists only when rootFolder does, which is
       // the condition this whole block runs under.
       const pattern = new vscode.RelativePattern(rootFolder!, ".acciaccatura/**/*.json");

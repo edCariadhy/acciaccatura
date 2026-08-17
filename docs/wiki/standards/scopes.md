@@ -92,14 +92,24 @@ Sharding by scope buys things we do need:
 
 What it costs, knowingly:
 
-- **The file+line lookup now spans scope files.** "Notes on `src/pay.ts:12`" has
-  to consider every scope. At twenty scopes of fifty notes that is about a
-  megabyte — a couple of milliseconds by the same measurement. Acceptable now;
-  it needs an index if a workspace ever holds hundreds of scopes, and that
-  threshold should be measured, not guessed.
+- **The file+line lookup now spans every scope file, and every loose note's own
+  file.** "Notes on `src/pay.ts:12`" has to consider all of them, because the
+  in-memory list a query runs against is loaded from the whole directory tree.
+  At twenty scopes of fifty notes that is about a megabyte — a couple of
+  milliseconds by the same measurement. Loose notes cost more per note, because
+  each is a separate file read rather than a slice of one — see
+  [decisions/0003-store-shape.md](../decisions/0003-store-shape.md) for the
+  numbers. Acceptable at the counts sweeping keeps a workspace at; it needs an
+  index if either count grows past what has been measured, and that threshold
+  should be measured, not guessed.
 - **Moving a note between scopes moves it between files.** It keeps its id.
-- **Unscoped notes still need a home** — they stay in the store file that exists
-  today, which the reader must keep understanding.
+- **Unscoped notes need a home too, and it is not the shared store file** — see
+  [decisions/0003-store-shape.md](../decisions/0003-store-shape.md). A scope and
+  a loose note have opposite lifetimes: a scope is curated and low-churn, a
+  loose note is short-lived and swept, and one shared file for every loose note
+  paid the same full-rewrite cost sharding by scope was built to remove. Each
+  gets a file of its own under `notes/`, and the old shared file still loads,
+  the same way an old un-sharded store does.
 
 ### Built
 
@@ -118,6 +128,14 @@ What it costs, knowingly:
 - **The old single file still loads.** It is what a store with no sets looks
   like, and scoped notes found in it move to their own file on the next write.
   No migration step, and none of the pre-1.0 licence to break was spent.
+- **A loose note gets a file of its own, under `notes/<id>.json`.** Unlike a
+  scope file, its file is *deleted* once the note is gone — removed, resolved
+  into nothing, or moved into a scope — rather than emptied. There is nothing
+  for an empty note file to mean, and a tombstone for every note ever created is
+  exactly the git litter one file per note was chosen to avoid. Reads across the
+  whole `notes/` directory are issued in parallel, not one at a time: sequential
+  reads cost nothing while there were only ever a handful of scope files, but
+  become the dominant cost once loose notes can number in the thousands.
 
 ## 4. Staleness is reported, never scored
 
