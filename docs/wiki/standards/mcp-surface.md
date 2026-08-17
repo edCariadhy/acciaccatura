@@ -131,8 +131,16 @@ still belongs to its set, and a notification on every write would train a client
 to re-list for no reason.
 
 This covers writes made **through the server**. A set the person creates in the
-editor still arrives late: nothing watches the store yet (Phase 6). Every read
-reloads first, so the answer is never wrong, only later than it could be.
+editor still arrives late, and the watching added in Phase 6 does not change
+that — it runs in the **editor**, which is where the invisible-note problem was.
+The server has no watcher, so it cannot tell a client about a set a person just
+made. Every read reloads first, so the answer is never wrong, only later than it
+could be.
+
+Giving the server one is the obvious next step and was left out on purpose: it
+buys a single notification, and it costs a recursive file watcher inside a
+long-lived stdio process, where the platform differences are real and a leaked
+watcher outlives every session. Worth doing when something needs it.
 
 ## 3. Procedures do not live in a skill
 

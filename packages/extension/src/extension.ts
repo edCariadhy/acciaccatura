@@ -9,6 +9,8 @@ import { clearFinishedNotes, markNoteDone, reopenNote, showNoteAges } from "./li
 import type { LifecycleDeps } from "./lifecycle.js";
 
 import { addNoteToScope, checkScope, closeScope } from "./scopes.js";
+
+import { watchStore } from "./watch.js";
 import type { ScopeDeps } from "./scopes.js";
 
 import { DecorationManager, initDecorations } from "./decorations.js";
@@ -20,8 +22,10 @@ import { AnnotationTreeProvider, AnnotationTreeItem, ScopeTreeItem } from "./tre
 export function activate(context: vscode.ExtensionContext): void {
   initDecorations(context);
   const folders = vscode.workspace.workspaceFolders;
-  const store = (folders && folders.length > 0)
-    ? new AnnotationStore(join(folders[0]!.uri.fsPath, ".acciaccatura", "annotations.json")) 
+  // Held separately from `folders` so the watcher below can name it.
+  const rootFolder = folders?.[0];
+  const store = rootFolder
+    ? new AnnotationStore(join(rootFolder.uri.fsPath, ".acciaccatura", "annotations.json"))
     : undefined;
 
   let decorationManager: DecorationManager | undefined;
@@ -57,6 +61,40 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         })
       );
+
+      // Watch the store, so a note an agent writes while you sit in one file
+      // does not wait for you to switch files to appear. The glob covers the
+      // set files under scopes/ as well as annotations.json; the store's temp
+      // files end in .tmp and are not matched, so a write is not seen twice.
+      // Non-null because the store exists only when rootFolder does, which is
+      // the condition this whole block runs under.
+      const pattern = new vscode.RelativePattern(rootFolder!, ".acciaccatura/**/*.json");
+      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      context.subscriptions.push(watcher);
+      context.subscriptions.push({
+        dispose: watchStore({
+          onChange: (handler) => {
+            const subs = [
+              watcher.onDidChange(handler),
+              watcher.onDidCreate(handler),
+              watcher.onDidDelete(handler),
+            ];
+            return () => subs.forEach((s) => s.dispose());
+          },
+          refresh: async () => {
+            await store.reload();
+            // A write changes what a set check would say, so cached counts go
+            // with it — the same reason our own writes clear them.
+            treeProvider?.clearReports();
+            treeProvider?.refresh();
+            await decorationManager?.updateDecorations(vscode.window.activeTextEditor);
+          },
+          // A store read mid-write is broken JSON and the next event fixes it,
+          // so this is not worth a message bar. It goes where a developer can
+          // find it instead of nowhere.
+          onError: (error) => console.warn("Acciaccatura: could not re-read the store", error),
+        }),
+      });
     }).catch(() => {});
   }
 

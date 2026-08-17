@@ -171,8 +171,13 @@ The code already encodes several of these; keep them enforced as it grows.
 - *MCP is a product API* → tool descriptions in [server.ts](packages/mcp-server/src/server.ts)
   state *when* to call each tool. If you change a tool's behavior, change its description in the
   same commit.
-- *Lazy activation* → `activationEvents: []` in the extension `package.json`; VS Code activates
-  only on first command use. Do not add startup activation.
+- *Cheap activation* → `activationEvents: ["onStartupFinished"]` in the extension
+  `package.json`: VS Code activates once startup has settled, never during it. The rule the
+  shared host actually imposes is about **work, not activation** — the sidebar, the gutter and
+  the store watcher all have to exist before you run any command, so activating only on first
+  command use would mean no notes visible until you asked for them. `activate()` reads the
+  store once and registers listeners; nothing in it scales with workspace size, and nothing
+  added to it may.
 
 ## Ground-truth order
 
