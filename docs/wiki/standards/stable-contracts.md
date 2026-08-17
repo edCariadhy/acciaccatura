@@ -21,7 +21,8 @@ what makes the promise real.
 
 | Boundary | Consumer | Rule |
 | --- | --- | --- |
-| **MCP tool surface** (`packages/mcp-server/src/server.ts`) | Any agent, anywhere | Additive only. Add new tools or new **optional** input fields; never rename a tool, change an existing field, or change the meaning an agent inferred from a description. |
+| **MCP names and shapes** (`packages/mcp-server/src/server.ts`) | Any agent, anywhere | Additive only. Add new tools, resources, prompts, or new **optional** input fields; never rename one, remove one, or change an existing field's type. These are what a caller is coded against. |
+| **What those tools say** — titles, descriptions, prompt text, resource documents | Any agent, anywhere | **Free to change, and sometimes obliged to.** Not a compatibility surface: nothing parses them, so no change here can break a caller. They are read by an agent that then decides, which makes them behaviour — so a change must be deliberate and true of the code. A description that has drifted from the behaviour is the defect; rewording it is the fix, not a breach. |
 | **On-disk schema** (`.acciaccatura/annotations.json`, `StoreFile`) | A user's real data, across versions | Additive + **tolerant reader** + `version`. Old files load unchanged; unknown fields are preserved; an unknown enum value (e.g. a future `trust`) downgrades, it does not crash. |
 | **`@acciaccatura/core` internals** | Only `mcp-server` + `extension`, in this repo | Refactor freely. You own every caller; the tests catch you. |
 
@@ -50,22 +51,33 @@ At a closed boundary you never rename in place. To get the effect of a rename:
 - **A golden API file.** Go pins its stable API in `api/*.txt` and fails CI on an
   unintended change. Ours is
   [surface.golden.md](../../../packages/mcp-server/test/integration/surface.golden.md),
-  **built**, and it goes further than tool signatures: it holds every word an
-  agent reads. Tool names, titles, descriptions and input schemas; the resource
-  descriptions **and the documents themselves**; every prompt's description,
-  arguments and full message text. `UPDATE_GOLDEN=1` accepts a change, and the
-  question to answer then is not "did I mean this" but "is this additive".
+  **built**. It holds every word an agent reads: names, titles, descriptions and
+  input schemas; the resource descriptions **and the documents themselves**;
+  every prompt's description, arguments and full message text. `UPDATE_GOLDEN=1`
+  accepts a change.
 
-  Two things learned building it, both worth keeping:
+  It is a **no-silent-changes** file, not an additive-only one — the two halves
+  of the table above are guarded for different reasons, and the question to ask
+  when the diff appears depends on which half moved:
+
+  - **A name or a shape moved** → *is this additive?* A new tool or a new
+    optional argument is fine; a rename or a removal waits for a major version.
+  - **Only the wording moved** → *is this still true of the code?* Rewording is
+    allowed and is sometimes the whole point of the change. What is not allowed
+    is doing it without noticing, which is the only thing this file prevents.
+
+  Two things learned building it:
 
   - **A golden file that moves on its own is worse than none.** The first version
     embedded a set's `openedAt`, so it would have gone red on the next run for no
     reason — and a test that cries wolf teaches everyone to update it without
     reading it, which is the one failure this test cannot afford. Timestamps are
     masked; nothing else is.
-  - **Descriptions are the largest part of the contract and the least guarded.**
-    Names and schemas are hard to change by accident. A reworded sentence is not,
-    and it reaches every agent that reads it to decide when to call something.
+  - **The wording is the least guarded thing on the surface, and not because it
+    is frozen.** Names and schemas are hard to change by accident and easy to
+    review. A sentence is the reverse: trivial to change in a find-and-replace or
+    a reformat, and it steers every agent that reads it. Visibility is the point,
+    not immutability.
 
 ## Where our problem is harder than Go's
 
