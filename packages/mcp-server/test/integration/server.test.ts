@@ -897,9 +897,10 @@ describe("telling a client the set list moved", () => {
  * The procedures, as prompts.
  *
  * A set is a sequence, and how to work through one is a workflow the tools
- * cannot state on their own. These are prompts and not a Claude skill on
- * purpose: a skill is one vendor's format, and this product exists to deliver
- * intent at the protocol layer so every agent benefits.
+ * cannot state on their own. These are prompts rather than a skill on purpose,
+ * and not because of reach — plenty of agents read skills. A skill is a second
+ * artefact, kept in step with the tools it drives by hand; a prompt ships with
+ * the server that already serves the notes.
  */
 describe("procedures as prompts", () => {
   /** The text of the single message a prompt returns. */

@@ -13,10 +13,11 @@ import type { AnnotationStore, ScopeIndexEntry } from "@acciaccatura/core";
  * code when it disagrees". That is a workflow, and MCP has a primitive for
  * workflows.
  *
- * They are prompts and not a Claude skill on purpose. A skill is one vendor's
- * format, and this product exists to deliver intent at the protocol layer so
- * every agent benefits — a walkthrough that only Claude can run gives that away.
- * See standards/mcp-surface.md §3.
+ * They are prompts rather than a skill on purpose, and not because of reach —
+ * plenty of agents read skills. A skill is a *second artefact*: installed next
+ * to the server and kept in step with the tools it drives by hand. A prompt
+ * ships with the server that already serves the notes, so a procedure cannot
+ * drift out of step with the tools it calls. See standards/mcp-surface.md §3.
  *
  * Nothing here reads code or copies notes into the message. The prompt says
  * which tools to call and in what order; the agent calls them and gets the live

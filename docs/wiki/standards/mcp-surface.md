@@ -1,7 +1,7 @@
 ---
 type: standard
 title: The MCP Surface
-description: Which of MCP's three primitives each part of the product belongs to, why scopes are a parameter rather than new verbs, and why procedures do not live in a Claude-only skill.
+description: Which of MCP's three primitives each part of the product belongs to, why scopes are a parameter rather than new verbs, and why procedures ship as prompts rather than as a skill.
 ---
 
 # The MCP Surface
@@ -136,14 +136,22 @@ reloads first, so the answer is never wrong, only later than it could be.
 
 ## 3. Procedures do not live in a skill
 
-A skill is one vendor's format. The product's whole reason to exist is
-**IDE-agnostic intent delivered at the protocol layer** — solve it once so every
-agent benefits, not only users of one tool. A walkthrough that lives in a Claude
-skill does not exist for any other agent, which gives away the differentiator to
-save a little work.
+Skills are a real option, and several agents read them — this is not an argument
+about reach, and an earlier version of this page that made it one was wrong.
 
-So: **procedures ship as MCP prompts**, which every MCP client can list and use.
-A skill may wrap them for nicer ergonomics on one client. The skill is a
+The reason procedures still ship as **MCP prompts** is that a skill is a *second
+artefact*. It has to be installed next to the server, kept in step by hand with
+the tools it drives, and written in whatever format the agent in front of you
+reads. The notes already arrive over MCP; a prompt arrives with them, from the
+same server, in the protocol the client already speaks. So the procedure cannot
+drift out of step with the tools it calls — they ship together or not at all —
+and nothing extra has to be installed for the workflow to exist.
+
+That is the same rule the tool descriptions follow: a procedure that has drifted
+from the behaviour it describes is a defect no prompt can fix, and the surest way
+to cause that drift is to keep the two in separate artefacts.
+
+A skill may still wrap these for nicer ergonomics on one client. The skill is a
 convenience layer; the prompt is the source of truth.
 
 **Built** — three, each taking a `scope`:
