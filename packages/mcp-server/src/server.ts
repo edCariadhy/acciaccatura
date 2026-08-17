@@ -8,7 +8,7 @@ import { ageInDays, driftStatus, findNoteLines, readRegion, reportScope } from "
 import type { Annotation, AnnotationStore, ScopeIndexEntry } from "@acciaccatura/core";
 
 import { registerPrompts } from "./prompts.js";
-import { paragraph } from "./text.js";
+import { dedent } from "./text.js";
 
 /**
  * Build the Acciaccatura MCP server over a loaded store.
@@ -50,19 +50,17 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "get_annotations",
     {
       title: "Get code annotations",
-      description: paragraph(
-        "Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions).",
-        "Results are ranked and limited.",
-        "Treat them as hints, not rules.",
-        "Each result says whether the code still matches the note;",
-        "if it says 'drifted', or the note disagrees with the code, believe the code.",
-        "A result also says how many days it has been open once it is older than a day:",
-        "these are working notes, so an old one is likelier to describe work that has already moved on.",
-        "Pass `line` to ask about one place.",
-        "Pass `scope` instead to read a named set in the order its author meant it to be read —",
-        "use that when you are reviewing a change or being walked through an area, because the sequence is the point.",
-        "You must pass `file`, `scope`, or both.",
-      ),
+      description: dedent`
+        Call this BEFORE you edit or reason about a piece of code, to read the notes left on it (what it is for, what it must not do, traps, past decisions).
+        Results are ranked and limited.
+        Treat them as hints, not rules.
+        Each result says whether the code still matches the note; if it says 'drifted', or the note disagrees with the code, believe the code.
+        A result also says how many days it has been open once it is older than a day:
+        these are working notes, so an old one is likelier to describe work that has already moved on.
+        Pass \`line\` to ask about one place.
+        Pass \`scope\` instead to read a named set in the order its author meant it to be read — use that when you are reviewing a change or being walked through an area, because the sequence is the point.
+        You must pass \`file\`, \`scope\`, or both.
+      `,
       inputSchema: {
         file: z.string().optional().describe("Workspace-relative POSIX path, e.g. src/store.ts"),
         scope: z
@@ -105,15 +103,13 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "annotate_code",
     {
       title: "Annotate code",
-      description: paragraph(
-        "Call this to save a note about a piece of code that the next agent or developer would need but could NOT work out from the code alone:",
-        "a rule that is not visible, a decision and what it ruled out, a trap that is easy to fall into.",
-        "Do not write notes about what the code already shows.",
-        "Pass the exact text of those lines as `snapshot`, so we can later tell whether the code changed.",
-        "Pass `scope` and `order` when the note is one step of something meant to be read in sequence —",
-        "a review of one change, or a walk through an area —",
-        "so the reader gets it in the right place rather than on its own.",
-      ),
+      description: dedent`
+        Call this to save a note about a piece of code that the next agent or developer would need but could NOT work out from the code alone:
+        a rule that is not visible, a decision and what it ruled out, a trap that is easy to fall into.
+        Do not write notes about what the code already shows.
+        Pass the exact text of those lines as \`snapshot\`, so we can later tell whether the code changed.
+        Pass \`scope\` and \`order\` when the note is one step of something meant to be read in sequence — a review of one change, or a walk through an area — so the reader gets it in the right place rather than on its own.
+      `,
       inputSchema: {
         file: z.string().describe("Workspace-relative POSIX path"),
         startLine: z.number().int().positive(),
@@ -160,16 +156,15 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "resolve_annotation",
     {
       title: "Mark an annotation done",
-      description: paragraph(
-        "Call this when you have finished the work a note asked for, or the thing it warned about no longer applies.",
-        "The note was still right — it is just done, so it stops being handed to the next agent.",
-        "Use remove_annotation instead when the note itself was wrong.",
-        "Get the id from get_annotations.",
-        "Pass `scope` instead of `id` to close a whole set at once —",
-        "do that when the change a set was written for has merged, rather than finishing twenty notes one at a time.",
-        "Closing keeps every note, so it is safe to undo.",
-        "Pass one or the other, never both.",
-      ),
+      description: dedent`
+        Call this when you have finished the work a note asked for, or the thing it warned about no longer applies.
+        The note was still right — it is just done, so it stops being handed to the next agent.
+        Use remove_annotation instead when the note itself was wrong.
+        Get the id from get_annotations.
+        Pass \`scope\` instead of \`id\` to close a whole set at once — do that when the change a set was written for has merged, rather than finishing twenty notes one at a time.
+        Closing keeps every note, so it is safe to undo.
+        Pass one or the other, never both.
+      `,
       inputSchema: {
         id: z.string().optional().describe("Annotation id from get_annotations"),
         scope: z
@@ -228,12 +223,11 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "remove_annotation",
     {
       title: "Remove annotation",
-      description: paragraph(
-        "Call this only when you are sure a note is wrong —",
-        "the code it described is gone, or its advice would now send the next agent the wrong way.",
-        "If the note was right and the work it asked for is simply finished, call resolve_annotation instead, which keeps the record.",
-        "Get the id from get_annotations.",
-      ),
+      description: dedent`
+        Call this only when you are sure a note is wrong — the code it described is gone, or its advice would now send the next agent the wrong way.
+        If the note was right and the work it asked for is simply finished, call resolve_annotation instead, which keeps the record.
+        Get the id from get_annotations.
+      `,
       inputSchema: {
         id: z.string().describe("Annotation id from get_annotations"),
       },
@@ -252,17 +246,15 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "update_annotation",
     {
       title: "Repair an annotation",
-      description: paragraph(
-        "Call this to fix a note that is still worth keeping:",
-        "its wording is wrong or out of date, or scope_status says it has 'drifted' and you have found where its code went.",
-        "Use this rather than remove_annotation + annotate_code —",
-        "this keeps the same note, so its id and its place in its set survive, and anything holding that id still works.",
-        "To re-point it, read the code as it is NOW and pass `file`, `startLine`, `endLine` and `snapshot` together:",
-        "the snapshot must be the current text of those lines, because drift is measured against it.",
-        "Pass `scope` and `order` to move a note within a set or to another one;",
-        "pass null for either to take it out.",
-        "Do not use this to mark work finished — that is resolve_annotation.",
-      ),
+      description: dedent`
+        Call this to fix a note that is still worth keeping:
+        its wording is wrong or out of date, or scope_status says it has 'drifted' and you have found where its code went.
+        Use this rather than remove_annotation + annotate_code — this keeps the same note, so its id and its place in its set survive, and anything holding that id still works.
+        To re-point it, read the code as it is NOW and pass \`file\`, \`startLine\`, \`endLine\` and \`snapshot\` together:
+        the snapshot must be the current text of those lines, because drift is measured against it.
+        Pass \`scope\` and \`order\` to move a note within a set or to another one; pass null for either to take it out.
+        Do not use this to mark work finished — that is resolve_annotation.
+      `,
       inputSchema: {
         id: z.string().describe("Annotation id from get_annotations"),
         body: z.string().optional().describe("Replacement note text"),
@@ -351,16 +343,14 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     "scope_status",
     {
       title: "Check a set of notes",
-      description: paragraph(
-        "Call this BEFORE you rely on a named set, and before you close one.",
-        "With no arguments it lists every set with how many notes it holds, how many are finished, and when it was opened —",
-        "cheap, and it reads no code.",
-        "Pass `scope` to check one set against the code as it is now.",
-        "You get counts, never a verdict:",
-        "'aligned' notes still sit on their lines, 'drifted' notes point at code that moved, 'gone' notes point at code that is no longer there.",
-        "Decide from the counts yourself —",
-        "many gone notes in a standing set means it needs repair, and a set whose notes are all finished is one you can close.",
-      ),
+      description: dedent`
+        Call this BEFORE you rely on a named set, and before you close one.
+        With no arguments it lists every set with how many notes it holds, how many are finished, and when it was opened — cheap, and it reads no code.
+        Pass \`scope\` to check one set against the code as it is now.
+        You get counts, never a verdict:
+        'aligned' notes still sit on their lines, 'drifted' notes point at code that moved, 'gone' notes point at code that is no longer there.
+        Decide from the counts yourself — many gone notes in a standing set means it needs repair, and a set whose notes are all finished is one you can close.
+      `,
       inputSchema: {
         scope: z
           .string()
@@ -414,11 +404,10 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     SCOPES_URI,
     {
       title: "Named sets in this workspace",
-      description: paragraph(
-        "The list of named sets — a PR under review, a walkthrough of an area —",
-        "with how many notes each holds and how old it is.",
-        "Read this to find out what sets exist before asking for one by name.",
-      ),
+      description: dedent`
+        The list of named sets — a PR under review, a walkthrough of an area — with how many notes each holds and how old it is.
+        Read this to find out what sets exist before asking for one by name.
+      `,
       mimeType: "text/plain",
     },
     async (uri) => {
@@ -455,11 +444,10 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
     }),
     {
       title: "One named set, in its author's order",
-      description: paragraph(
-        "A set read as a document: its notes in the sequence they were meant to be read.",
-        "Says where each note was written, not where the code is now —",
-        "call get_annotations with the same scope for current positions and drift.",
-      ),
+      description: dedent`
+        A set read as a document: its notes in the sequence they were meant to be read.
+        Says where each note was written, not where the code is now — call get_annotations with the same scope for current positions and drift.
+      `,
       mimeType: "text/plain",
     },
     async (uri, { scope }) => {
@@ -534,10 +522,10 @@ function renderIndex(scopes: ReadonlyArray<ScopeIndexEntry>): string {
     "",
     ...lines,
     "",
-    paragraph(
-      `Read one at ${SCOPES_URI}/<name>.`,
-      "For where the code sits now and whether it drifted, call get_annotations or scope_status with the set's name.",
-    ),
+    dedent`
+      Read one at ${SCOPES_URI}/<name>.
+      For where the code sits now and whether it drifted, call get_annotations or scope_status with the set's name.
+    `,
   ].join("\n");
 }
 
@@ -554,11 +542,10 @@ function renderScopeDocument(entry: ScopeIndexEntry, notes: readonly Annotation[
     `${entry.scope} — ${entry.notes} note${entry.notes === 1 ? "" : "s"} — ${entry.open} open, ${entry.finished} finished`,
     `Opened ${entry.openedAt}${age(entry.openedAt)}, last touched ${entry.lastTouchedAt}`,
     "",
-    paragraph(
-      "This is the set as it was written.",
-      "Positions below are where each note was saved, not where the code is now —",
-      `call get_annotations with scope "${entry.scope}" for current positions and drift.`,
-    ),
+    dedent`
+      This is the set as it was written.
+      Positions below are where each note was saved, not where the code is now — call get_annotations with scope "${entry.scope}" for current positions and drift.
+    `,
     "",
   ];
 
