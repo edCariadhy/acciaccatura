@@ -150,4 +150,21 @@ describe("a write only touches what it changes", () => {
 
     expect(rewritten(before, await inodes())).toEqual(["scopes/pr__1.json"]);
   });
+
+  it("empties a scope file when its only note is swept, with nothing else in flight", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const note = await store.add(draft("only one", "pr/1"));
+    await store.resolve(note.id, "human");
+
+    const before = await inodes();
+    await store.sweepResolved({ resolvedBefore: new Date() });
+
+    // Nothing else in the store changed, so this write has only a file to
+    // EMPTY — nothing gains content and nothing needs deleting. That "only
+    // losing" case is the one easiest to short-circuit past by mistake, since
+    // gaining and deleting are both trivially empty and it is tempting to read
+    // that as "nothing to do".
+    expect(rewritten(before, await inodes())).toEqual(["scopes/pr__1.json"]);
+  });
 });
