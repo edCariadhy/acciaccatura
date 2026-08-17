@@ -58,9 +58,12 @@ export function watchStore(deps: WatchDeps): () => void {
     if (running) return;
     running = true;
     try {
-      while (pending && !disposed) {
+      while (pending) {
         pending = false;
         await delay(quietMs);
+        // The only disposal check that does anything. Testing it in the loop
+        // condition as well reads as care and can never come out differently:
+        // whatever gets past there arrives here before anything is drawn.
         if (disposed) return;
         // Something landed while we waited: start the quiet period again
         // rather than redrawing on top of a write still in progress.
