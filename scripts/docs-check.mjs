@@ -13,7 +13,7 @@ import { join, dirname, resolve, relative } from "node:path";
 
 const ROOT = resolve(process.argv[2] ?? "docs");
 const RESERVED = new Set(["index.md", "log.md"]);
-const ALLOWED_TYPES = new Set(["standard", "reference", "guide", "log"]);
+const ALLOWED_TYPES = new Set(["standard", "reference", "guide", "log", "decision"]);
 
 /** @type {string[]} */
 const violations = [];

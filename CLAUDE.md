@@ -49,6 +49,15 @@ Standards & docs live in-repo under [docs/wiki/](docs/wiki/index.md) (there is n
 wiki — it would bypass review). Change the doc for a thing in the same PR as the thing;
 `docs:check` runs in CI.
 
+**Design decisions get a record.** [docs/wiki/decisions/](docs/wiki/decisions/index.md)
+holds why the design is the way it is — the options that lost, and what would change the
+answer. Write one when a choice is hard to see from the code afterwards: an option
+rejected on a measurement, an obvious approach that was tried and failed, or anything
+touching an on-disk format or the MCP surface. Records are immutable once merged; correct
+one by adding a newer record that supersedes it. This exists because a standard says what
+to do and not what was already tried — twice now a page has prescribed something that had
+been implemented and did not work.
+
 Write PR text, commits, docs, comments and user-facing strings at **B2 English**. Code
 names are judged differently — short and stating intent, never rewritten to hit a reading
 level. `provenance` and the trust values keep their names for good. The rule and the word

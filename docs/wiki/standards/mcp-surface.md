@@ -162,6 +162,9 @@ to cause that drift is to keep the two in separate artefacts.
 A skill may still wrap these for nicer ergonomics on one client. The skill is a
 convenience layer; the prompt is the source of truth.
 
+The options, and the wrong reason this page gave at first, are recorded in
+[../decisions/0002-procedures-as-prompts.md](../decisions/0002-procedures-as-prompts.md).
+
 **Built** — three, each taking a `scope`:
 
 | prompt | for |
