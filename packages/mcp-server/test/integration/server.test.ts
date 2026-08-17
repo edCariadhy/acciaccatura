@@ -892,3 +892,128 @@ describe("telling a client the set list moved", () => {
     await c.close();
   });
 });
+
+/**
+ * The procedures, as prompts.
+ *
+ * A set is a sequence, and how to work through one is a workflow the tools
+ * cannot state on their own. These are prompts rather than a skill on purpose,
+ * and not because of reach — plenty of agents read skills. A skill is a second
+ * artefact, kept in step with the tools it drives by hand; a prompt ships with
+ * the server that already serves the notes.
+ */
+describe("procedures as prompts", () => {
+  /** The text of the single message a prompt returns. */
+  async function promptText(name: string, scope: string): Promise<string> {
+    const got = await client.getPrompt({ name, arguments: { scope } });
+    return got.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("\n");
+  }
+
+  async function seed(scope: string, body = "a note"): Promise<void> {
+    await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "export function add(a, b) {", body, scope, order: 1 },
+    });
+  }
+
+  it("offers the three procedures a set implies, and no more", async () => {
+    const { prompts } = await client.listPrompts();
+    expect(prompts.map((p) => p.name).sort()).toEqual([
+      "onboarding_tour",
+      "repair_set",
+      "review_change",
+    ]);
+    // A prompt has to say WHEN to reach for it, the same rule the tools follow.
+    for (const p of prompts) {
+      expect(p.description ?? "", `${p.name} has no when-to-use`).toMatch(/use this when/i);
+    }
+  });
+
+  it("tells every procedure to believe the code over the note", async () => {
+    await seed("pr/142");
+    // The first invariant of the product. A procedure that left it out would be
+    // teaching an agent to treat a stale note as an instruction.
+    for (const name of ["review_change", "onboarding_tour", "repair_set"]) {
+      const text = await promptText(name, "pr/142");
+      expect(text, `${name} does not say the code wins`).toMatch(/the code wins|believe the code/i);
+      expect(text, `${name} does not call them hints`).toMatch(/hints|not the truth/i);
+    }
+  });
+
+  it("sends every procedure through the tools rather than pasting the notes in", async () => {
+    await seed("pr/142", "the body of the note");
+    for (const name of ["review_change", "onboarding_tour", "repair_set"]) {
+      const text = await promptText(name, "pr/142");
+      expect(text, `${name} does not call get_annotations`).toContain("get_annotations");
+      // Copying the notes into the message would hand the agent a snapshot that
+      // stopped being true when it was written, with no drift in it.
+      expect(text, `${name} pasted the note body in`).not.toContain("the body of the note");
+    }
+  });
+
+  it("makes the order the reason to use a set, in both reading procedures", async () => {
+    await seed("pr/142");
+    for (const name of ["review_change", "onboarding_tour"]) {
+      expect(await promptText(name, "pr/142"), `${name} does not mention order`).toMatch(/order/i);
+    }
+  });
+
+  it("stops a review from closing the set on its own", async () => {
+    await seed("pr/142");
+    const text = await promptText("review_change", "pr/142");
+    // Closing means the change merged, which is not the reviewer's call.
+    expect(text).toMatch(/do not close the set/i);
+  });
+
+  it("stops a tour from finishing the notes it just read", async () => {
+    await seed("onboarding/billing");
+    const text = await promptText("onboarding_tour", "onboarding/billing");
+    // A standing walkthrough outlives any one reading. An agent that "completed"
+    // it would take it away from the next person.
+    expect(text).toMatch(/do not close the set/i);
+    expect(text).toMatch(/standing/i);
+    expect(text).toMatch(/change nothing/i);
+  });
+
+  it("makes repair re-point rather than delete, and never on a guess", async () => {
+    await seed("onboarding/billing");
+    const text = await promptText("repair_set", "onboarding/billing");
+    // update_annotation exists so a drifted note can be fixed without losing its
+    // id or its place. A procedure that reached for remove would undo that.
+    expect(text).toContain("update_annotation");
+    expect(text).toMatch(/all four/i);
+    expect(text).toMatch(/snapshot/);
+    expect(text).toMatch(/never re-point a note on a guess/i);
+  });
+
+  it("names the sets that do exist when asked for one that does not", async () => {
+    await seed("pr/142");
+    // Handing back a procedure for a set that is not there would send an agent
+    // to run six steps against nothing.
+    await expect(client.getPrompt({ name: "review_change", arguments: { scope: "pr/999" } })).rejects.toThrow(
+      /No set named pr\/999.*pr\/142/s,
+    );
+  });
+
+  it("says a workspace has no sets rather than listing none", async () => {
+    await expect(client.getPrompt({ name: "review_change", arguments: { scope: "pr/1" } })).rejects.toThrow(
+      /no named sets yet/i,
+    );
+  });
+
+  it("sees a set the editor made after this server started", async () => {
+    const editor = await editorStore();
+    await editor.add({
+      body: "written in the editor",
+      anchor: { file: "src/math.ts", startLine: 1, endLine: 1, snapshot: "export function add(a, b) {" },
+      provenance: "human",
+      scope: "pr/later",
+    });
+    expect(await promptText("review_change", "pr/later")).toContain("pr/later");
+  });
+
+  it("does not spend a tool slot on any of this", async () => {
+    const { tools } = await client.listTools();
+    expect(tools).toHaveLength(6);
+  });
+});

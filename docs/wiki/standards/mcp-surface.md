@@ -1,7 +1,7 @@
 ---
 type: standard
 title: The MCP Surface
-description: Which of MCP's three primitives each part of the product belongs to, why scopes are a parameter rather than new verbs, and why procedures do not live in a Claude-only skill.
+description: Which of MCP's three primitives each part of the product belongs to, why scopes are a parameter rather than new verbs, and why procedures ship as prompts rather than as a skill.
 ---
 
 # The MCP Surface
@@ -136,15 +136,61 @@ reloads first, so the answer is never wrong, only later than it could be.
 
 ## 3. Procedures do not live in a skill
 
-A skill is one vendor's format. The product's whole reason to exist is
-**IDE-agnostic intent delivered at the protocol layer** — solve it once so every
-agent benefits, not only users of one tool. A walkthrough that lives in a Claude
-skill does not exist for any other agent, which gives away the differentiator to
-save a little work.
+Skills are a real option, and several agents read them — this is not an argument
+about reach, and an earlier version of this page that made it one was wrong.
 
-So: **procedures ship as MCP prompts**, which every MCP client can list and use.
-A skill may wrap them for nicer ergonomics on one client. The skill is a
+The reason procedures still ship as **MCP prompts** is that a skill is a *second
+artefact*. It has to be installed next to the server, kept in step by hand with
+the tools it drives, and written in whatever format the agent in front of you
+reads. The notes already arrive over MCP; a prompt arrives with them, from the
+same server, in the protocol the client already speaks. So the procedure cannot
+drift out of step with the tools it calls — they ship together or not at all —
+and nothing extra has to be installed for the workflow to exist.
+
+That is the same rule the tool descriptions follow: a procedure that has drifted
+from the behaviour it describes is a defect no prompt can fix, and the surest way
+to cause that drift is to keep the two in separate artefacts.
+
+A skill may still wrap these for nicer ergonomics on one client. The skill is a
 convenience layer; the prompt is the source of truth.
+
+**Built** — three, each taking a `scope`:
+
+| prompt | for |
+|---|---|
+| `review_change` | a set holding the notes for one change under review |
+| `onboarding_tour` | a standing walkthrough of an area |
+| `repair_set` | a set `scope_status` reports as drifted or gone |
+
+Four rules they all follow, and each is a thing that would have been easy to get
+wrong:
+
+- **They say the code wins.** Every one opens by saying the notes are hints, not
+  instructions, and that where a note and the code disagree the note is what is
+  wrong. A procedure is where an agent learns how to treat a note, so leaving
+  that out would teach it to act on a stale one.
+- **They send the agent through the tools, and paste nothing in.** A prompt that
+  copied the notes into its message would hand over a snapshot that stopped
+  being true when it was written, with no drift in it. The message says which
+  tool to call and in what order; the answers come back live.
+- **They will not end a set on their own.** `review_change` says not to close —
+  closing means the change merged, which is the author's call. `onboarding_tour`
+  says not to close and not to finish the notes: a standing walkthrough is meant
+  to outlive any one reading, and an agent that "completed" it would take it
+  away from the next person.
+- **Repair re-points, and never on a guess.** `repair_set` sends a drifted note
+  to `update_annotation` with all four anchor fields, so the note keeps its id
+  and its place. It says outright that a note moved onto code that merely looks
+  similar is worse than a note that says loudly it cannot be placed.
+
+Asking for a set that does not exist is an error that **names the sets that do**,
+so a typo is a one-step fix rather than a guess. Set names complete from the
+store, in prompt arguments as well as in the resource template.
+
+The SDK advertises `prompts.listChanged` here too, and unlike the resource list
+this one needs no notification: these three are registered once and the list
+never changes. If a prompt is ever registered conditionally, that stops being
+true and the same fix the resource list got applies.
 
 There is a second temptation worth naming. Because the store is committed and
 human-readable JSON, an agent with file access can simply read

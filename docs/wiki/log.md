@@ -4,6 +4,26 @@ Running record of what's actually built and verified, most recent first. Not a
 changelog of commits — a snapshot of state, so anyone (human or agent) can
 answer "what does this repo do today" without reconstructing it from `git log`.
 
+## 2026-08-17 — Correction: "skills are one vendor's format" was not true
+
+The 2026-08-16 entry below, and
+[standards/mcp-surface.md](standards/mcp-surface.md) §3 with it, argued that
+procedures belong on the protocol because a skill would reach only one agent.
+Several agents read skills. The premise was wrong, caught in review.
+
+The decision stands and the reason is now a better one. A skill is a **second
+artefact**: installed next to the server, kept in step by hand with the tools it
+drives. A prompt ships with the server that already serves the notes, so a
+procedure cannot drift out of step with the tools it calls — they ship together
+or not at all. That is the same rule the tool descriptions follow, and separate
+artefacts are the surest way to break it.
+
+Worth keeping as a pattern rather than a one-off: the argument was reached for
+because it sounded right, not because it had been checked, and it survived into
+a standard, the roadmap, a source comment and a test docstring before anyone
+looked at it. An argument that rests on what some other tool does today needs
+the same checking as an API signature.
+
 ## 2026-08-16 — Scopes: named sets of notes, and a smaller MCP surface
 
 Decided, not yet built. Two real uses drove it: a **PR scope**, where the writer

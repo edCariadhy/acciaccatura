@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { ageInDays, driftStatus, findNoteLines, readRegion, reportScope } from "@acciaccatura/core";
 import type { Annotation, AnnotationStore, ScopeIndexEntry } from "@acciaccatura/core";
 
+import { registerPrompts } from "./prompts.js";
+
 /**
  * Build the Acciaccatura MCP server over a loaded store.
  *
@@ -424,6 +426,10 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
       };
     },
   );
+
+  // The procedures. A set is a sequence, and how to work through one is a
+  // workflow the tools cannot state on their own. See prompts.ts.
+  registerPrompts(server, store);
 
   return server;
 }
