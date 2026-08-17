@@ -59,8 +59,11 @@ export async function withStoreLock<T>(storePath: string, work: () => Promise<T>
         continue;
       }
       if (Date.now() > until) {
+        // The EEXIST that put us here is the evidence, so it travels with the
+        // message rather than being swallowed by it.
         throw new Error(
           `Timed out waiting for ${lockPath}. Another process is writing to this store; delete the file if nothing is.`,
+          { cause: err },
         );
       }
       await sleep(Math.random() * RETRY_MS);
