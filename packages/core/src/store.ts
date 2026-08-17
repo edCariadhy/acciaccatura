@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -115,6 +115,17 @@ export class AnnotationStore {
    * writing at the same moment as me".
    */
   #seen = new Map<string, string>();
+  /**
+   * The bytes each file currently holds, as a digest.
+   *
+   * Every write used to rewrite every file the list needed, so adding one note
+   * to a 2,000-note store wrote 1,281 KB across every file — and two writers
+   * touching unrelated sets collided every time, because they were both
+   * rewriting the same bytes. A file whose contents have not changed is not
+   * written at all now, which turns "always collide" into "never" for writers
+   * working on different sets.
+   */
+  #digest = new Map<string, string>();
 
   constructor(path: string) {
     this.#path = path;
@@ -439,11 +450,12 @@ export class AnnotationStore {
 
     this.#seen.clear();
     for (const file of files) {
-      const { annotations, mark } = await readWithMark(file);
+      const { annotations, mark, digest } = await readWithMark(file);
       // The mark belongs to the bytes just read, not to the file a moment
       // later, or a write landing in between would be invisible to the check
       // that exists to catch exactly that.
       this.#seen.set(file, mark);
+      this.#digest.set(file, digest);
       for (const note of annotations) {
         const seen = byId.get(note.id);
         if (!seen || seen.updatedAt < note.updatedAt) byId.set(note.id, note);
@@ -497,13 +509,27 @@ export class AnnotationStore {
     const onDisk = [...(await this.#scopeFiles()), ...((await exists(this.#path)) ? [this.#path] : [])];
     const emptied = onDisk.filter((f) => !wanted.has(f));
 
-    // Check every file before writing any of them. Checking as we go could
-    // leave half a change applied, which is worse than the conflict itself:
-    // the retry would then run against a store we had already half rewritten.
-    await this.#checkUnchanged([...wanted.keys(), ...emptied]);
+    // Serialise first, then keep only what a write would actually alter. The
+    // comparison is on the exact bytes about to be saved, so it can never skip
+    // a file that needed saving.
+    const gaining = [...wanted]
+      .map(([file, annotations]) => ({ file, text: serialise(annotations) }))
+      .filter(({ file, text }) => digestOf(text) !== this.#digest.get(file));
+    const losing = emptied
+      .map((file) => ({ file, text: serialise([]) }))
+      .filter(({ file, text }) => digestOf(text) !== this.#digest.get(file));
 
-    for (const [file, annotations] of wanted) await this.#write(file, annotations);
-    for (const file of emptied) await this.#write(file, []);
+    if (gaining.length === 0 && losing.length === 0) return;
+
+    // Check before writing any of them. Checking as we go could leave half a
+    // change applied, which is worse than the conflict itself: the retry would
+    // then run against a store we had already half rewritten.
+    await this.#checkUnchanged([...gaining, ...losing].map((w) => w.file));
+
+    // Gaining before losing, still: a note moving between sets must exist in
+    // both files rather than neither if this stops half way.
+    for (const { file, text } of gaining) await this.#write(file, text);
+    for (const { file, text } of losing) await this.#write(file, text);
   }
 
   /**
@@ -554,16 +580,15 @@ export class AnnotationStore {
    * filesystem, so a reader — or a crash — sees either the old file or the new
    * one, never a half-written store.
    */
-  async #write(file: string, annotations: Annotation[]): Promise<void> {
+  async #write(file: string, text: string): Promise<void> {
     const temp = `${file}.${process.pid}.${this.#tempCounter++}.tmp`;
-    const contents: StoreFile = { version: 1, annotations };
     try {
-      await writeFile(temp, `${JSON.stringify(contents, null, 2)}\n`, "utf8");
+      await writeFile(temp, text, "utf8");
       await rename(temp, file);
-      // This instance is now the last writer, so what it just wrote is what it
-      // has seen. Without this the next file in the same batch would report a
-      // conflict against us.
-      this.#seen.set(file, await markOf(file));
+      // Nothing to record here. Both the mark and the digest are refreshed by
+      // the `#readFromDisk` that opens every attempt in `#mutate`, and the
+      // conflict check runs once before any file is written rather than
+      // between them — so a value written back here could never be read.
     } catch (err) {
       await rm(temp, { force: true });
       throw err;
@@ -626,14 +651,29 @@ async function markOf(file: string): Promise<string> {
  * pass, and save stale notes. Marking on both sides and insisting they agree is
  * what ties the mark to the bytes in hand.
  */
-async function readWithMark(file: string): Promise<{ annotations: Annotation[]; mark: string }> {
+async function readWithMark(
+  file: string,
+): Promise<{ annotations: Annotation[]; mark: string; digest: string }> {
   for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
     const before = await markOf(file);
-    const annotations = await readAnnotations(file);
+    const text = await readText(file);
     const after = await markOf(file);
-    if (before === after) return { annotations, mark: after };
+    if (before === after) {
+      return { annotations: parseAnnotations(text), mark: after, digest: digestOf(text ?? "") };
+    }
   }
   throw new Error(`${file} is being rewritten faster than it can be read`);
+}
+
+/** Exactly the bytes a store file holds, so a digest describes the real file. */
+function serialise(annotations: Annotation[]): string {
+  const contents: StoreFile = { version: 1, annotations };
+  return `${JSON.stringify(contents, null, 2)}\n`;
+}
+
+/** Content identity for "would this write change anything". */
+function digestOf(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -646,14 +686,20 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /** Read one store file, treating a missing file as empty. */
-async function readAnnotations(file: string): Promise<Annotation[]> {
+/** A file's raw text, or `undefined` when it is not there. */
+async function readText(file: string): Promise<string | undefined> {
   try {
-    const parsed = JSON.parse(await readFile(file, "utf8")) as Partial<StoreFile>;
-    return parsed.annotations ?? [];
+    return await readFile(file, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    return [];
+    return undefined;
   }
+}
+
+function parseAnnotations(text: string | undefined): Annotation[] {
+  if (text === undefined) return [];
+  const parsed = JSON.parse(text) as Partial<StoreFile>;
+  return parsed.annotations ?? [];
 }
 
 /**

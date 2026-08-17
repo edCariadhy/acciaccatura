@@ -157,7 +157,9 @@ Two steps, and the first is worth doing on its own:
 1. **Write only the files whose contents changed.** No format change. Measured
    on a 2,000-note store, a scoped write drops from 1,256 KB across 7 files to
    43.5 KB across 1, and two writers working on different sets stop colliding
-   entirely rather than always.
+   entirely rather than always. **Built 2026-08-17.** A file is serialised
+   first and written only when those exact bytes differ from what it already
+   holds, so the check can never skip a file that needed saving.
 2. **Then split the loose bucket**, once step 1 shows what is left. A loose
    write still costs 1,100 KB, because every unscoped note shares one file.
 
