@@ -3,6 +3,7 @@ import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import { z } from "zod";
 
 import type { AnnotationStore, ScopeIndexEntry } from "@acciaccatura/core";
+import { paragraph } from "./text.js";
 
 /**
  * The procedures, as MCP prompts.
@@ -68,8 +69,11 @@ export function registerPrompts(server: McpServer, store: AnnotationStore): void
     "review_change",
     {
       title: "Review a change in the order its author meant",
-      description:
-        "Use this when a set holds the notes for one change under review, such as pr/142. It walks the notes in the author's sequence, which is what tells you where to look first — something no ranking can work out.",
+      description: paragraph(
+        "Use this when a set holds the notes for one change under review, such as pr/142. It walks",
+        "the notes in the author's sequence, which is what tells you where to look first — something",
+        "no ranking can work out.",
+      ),
       argsSchema: { scope: scopeArg("The set holding the review notes, e.g. pr/142") },
     },
     async ({ scope }) => {
@@ -97,8 +101,11 @@ export function registerPrompts(server: McpServer, store: AnnotationStore): void
     "onboarding_tour",
     {
       title: "Be walked through an area, in order",
-      description:
-        "Use this when a set is a standing walkthrough of an area, such as onboarding/billing, and you need to understand it before working in it. It follows the author's sequence and changes nothing.",
+      description: paragraph(
+        "Use this when a set is a standing walkthrough of an area, such as onboarding/billing, and",
+        "you need to understand it before working in it. It follows the author's sequence and changes",
+        "nothing.",
+      ),
       argsSchema: { scope: scopeArg("The set holding the walkthrough, e.g. onboarding/billing") },
     },
     async ({ scope }) => {
@@ -127,8 +134,11 @@ export function registerPrompts(server: McpServer, store: AnnotationStore): void
     "repair_set",
     {
       title: "Repair a set whose code has moved on",
-      description:
-        "Use this when scope_status reports a set as drifted or gone, or when a standing set has not been read for a while. It finds the notes that no longer match the code and either re-points them or removes them, one at a time and never by guessing.",
+      description: paragraph(
+        "Use this when scope_status reports a set as drifted or gone, or when a standing set has not",
+        "been read for a while. It finds the notes that no longer match the code and either re-points",
+        "them or removes them, one at a time and never by guessing.",
+      ),
       argsSchema: { scope: scopeArg("The set to repair, e.g. onboarding/billing") },
     },
     async ({ scope }) => {

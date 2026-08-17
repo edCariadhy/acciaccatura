@@ -44,10 +44,26 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * A set the prompts can be rendered against.
+ *
+ * Every prompt needs a set that exists, and its message states what the set
+ * holds, so the fixture has to be fixed for the golden file to be stable. One
+ * open note is the smallest thing that makes all three render.
+ */
+const GOLDEN_SCOPE = "pr/142";
+
 /** Connect a client to a server over the same path an agent host uses. */
 async function connect(): Promise<Client> {
   const store = new AnnotationStore(join(root, ".acciaccatura", "annotations.json"));
   await store.load();
+  await store.add({
+    body: "a note, so the set exists",
+    anchor: { file: "src/pay.ts", startLine: 1, endLine: 1, snapshot: "export function pay(a) {" },
+    provenance: "agent",
+    scope: GOLDEN_SCOPE,
+    order: 1,
+  });
   const server = createServer(store, root);
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   await server.connect(serverT);
@@ -110,6 +126,15 @@ async function describeSurface(client: Client): Promise<string> {
       (a) => `- ${a.name}${a.required ? " (required)" : ""}: ${a.description ?? "(none)"}`,
     );
     out.push("arguments:", "", ...(args.length > 0 ? args : ["(none)"]), "");
+
+    // The message is the procedure. It is the longest thing an agent reads from
+    // this server and the easiest to reword by accident, so it belongs here
+    // rather than being left to a handful of regexes.
+    const got = await client.getPrompt({ name: p.name, arguments: { scope: GOLDEN_SCOPE } });
+    const text = got.messages
+      .map((m) => `[${m.role}]\n${m.content.type === "text" ? m.content.text : `(${m.content.type})`}`)
+      .join("\n\n");
+    out.push(`message, for a set named ${GOLDEN_SCOPE} holding one open note:`, "", text, "");
   }
 
   return `${out.join("\n").trimEnd()}\n`;
