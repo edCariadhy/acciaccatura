@@ -295,7 +295,10 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
           content: [
             {
               type: "text" as const,
-              text: "To re-anchor, pass file, startLine, endLine and snapshot together. The snapshot must be the current text of those lines.",
+              text: paragraph(
+                "To re-anchor, pass file, startLine, endLine and snapshot together.",
+                "The snapshot must be the current text of those lines.",
+              ),
             },
           ],
         };
@@ -528,7 +531,10 @@ function renderIndex(scopes: ReadonlyArray<ScopeIndexEntry>): string {
     "",
     ...lines,
     "",
-    `Read one at ${SCOPES_URI}/<name>. For where the code sits now and whether it drifted, call get_annotations or scope_status with the set's name.`,
+    paragraph(
+      `Read one at ${SCOPES_URI}/<name>. For where the code sits now and whether it drifted,`,
+      "call get_annotations or scope_status with the set's name.",
+    ),
   ].join("\n");
 }
 
@@ -545,7 +551,11 @@ function renderScopeDocument(entry: ScopeIndexEntry, notes: readonly Annotation[
     `${entry.scope} — ${entry.notes} note${entry.notes === 1 ? "" : "s"} — ${entry.open} open, ${entry.finished} finished`,
     `Opened ${entry.openedAt}${age(entry.openedAt)}, last touched ${entry.lastTouchedAt}`,
     "",
-    `This is the set as it was written. Positions below are where each note was saved, not where the code is now — call get_annotations with scope "${entry.scope}" for current positions and drift.`,
+    paragraph(
+      "This is the set as it was written. Positions below are where each note was saved, not",
+      `where the code is now — call get_annotations with scope "${entry.scope}" for current`,
+      "positions and drift.",
+    ),
     "",
   ];
 

@@ -48,9 +48,24 @@ At a closed boundary you never rename in place. To get the effect of a rename:
 - **A major-version door.** Genuinely breaking changes wait for a major version —
   where deprecated fields and tools are finally dropped (Go 2 / `v2` analogue).
 - **A golden API file.** Go pins its stable API in `api/*.txt` and fails CI on an
-  unintended change. Our equivalent is the MCP contract test (planned): a golden
-  snapshot of every tool's name + input schema + description that goes red on any
-  non-additive change.
+  unintended change. Ours is
+  [surface.golden.md](../../../packages/mcp-server/test/integration/surface.golden.md),
+  **built**, and it goes further than tool signatures: it holds every word an
+  agent reads. Tool names, titles, descriptions and input schemas; the resource
+  descriptions **and the documents themselves**; every prompt's description,
+  arguments and full message text. `UPDATE_GOLDEN=1` accepts a change, and the
+  question to answer then is not "did I mean this" but "is this additive".
+
+  Two things learned building it, both worth keeping:
+
+  - **A golden file that moves on its own is worse than none.** The first version
+    embedded a set's `openedAt`, so it would have gone red on the next run for no
+    reason — and a test that cries wolf teaches everyone to update it without
+    reading it, which is the one failure this test cannot afford. Timestamps are
+    masked; nothing else is.
+  - **Descriptions are the largest part of the contract and the least guarded.**
+    Names and schemas are hard to change by accident. A reworded sentence is not,
+    and it reaches every agent that reads it to decide when to call something.
 
 ## Where our problem is harder than Go's
 
@@ -65,7 +80,7 @@ polish.
 At `0.x` the convention is "anything can break", and our anchoring model is still
 moving. So:
 
-- **Now:** build the machinery (MCP contract test, store `version` check +
+- **Now:** build the machinery (MCP contract test **built**, store `version` check +
   tolerant reader + migration seam) and treat the MCP surface as additive-only by
   habit. The **store schema freezes first** — real user data exists the moment
   anyone uses the extension.
