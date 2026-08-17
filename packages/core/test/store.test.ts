@@ -792,6 +792,50 @@ describe("AnnotationStore", () => {
       });
     });
 
+    describe("deleting a set", () => {
+      it("removes every note in the set, open or finished, and says how many", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        const done = await store.add(inScope("pr/142", 1));
+        await store.add(inScope("pr/142", 2));
+        await store.resolve(done.id, "human");
+
+        // Unlike closing, deleting does not skip already-finished notes — it
+        // is the one verb that is allowed to lose them for good.
+        expect(await store.removeScope("pr/142")).toBe(2);
+        expect(store.query({ scope: "pr/142", includeResolved: true })).toHaveLength(0);
+      });
+
+      it("leaves other sets and unscoped notes alone", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+        await store.add(inScope("onboarding/billing", 1));
+        const loose = await store.add(draft());
+
+        expect(await store.removeScope("pr/142")).toBe(1);
+        expect(store.query({ scope: "onboarding/billing" })).toHaveLength(1);
+        expect(store.get(loose.id)).toBeDefined();
+      });
+
+      it("reports nothing removed for a set that does not exist", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+
+        expect(await store.removeScope("pr/999")).toBe(0);
+      });
+
+      it("drops the set from the index once nothing is left in it", async () => {
+        const store = new AnnotationStore(storePath);
+        await store.load();
+        await store.add(inScope("pr/142", 1));
+        await store.removeScope("pr/142");
+
+        expect(store.scopes().find((s) => s.scope === "pr/142")).toBeUndefined();
+      });
+    });
+
     it("reads a note saved before scopes existed as belonging to no set", async () => {
       const older = {
         version: 1,

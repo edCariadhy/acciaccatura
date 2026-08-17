@@ -6,7 +6,7 @@ import { AnnotationStore } from "@acciaccatura/core";
 import type { Annotation, NewAnnotation, ScopeIndexEntry } from "@acciaccatura/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { addNoteToScope, checkScope, closeScope } from "../../src/scopes.js";
+import { addNoteToScope, checkScope, closeScope, deleteScope } from "../../src/scopes.js";
 
 /**
  * The set-level flows a person runs from the editor, tested without a running
@@ -38,6 +38,7 @@ function deps(over: Record<string, unknown> = {}) {
     chooseNote: vi.fn(async (candidates: readonly Annotation[]) => candidates[0]),
     askScopeName: vi.fn(async () => "pr/142"),
     confirmClose: vi.fn(async () => true),
+    confirmDelete: vi.fn(async () => true),
     notify: vi.fn(),
     ...over,
   };
@@ -133,6 +134,61 @@ describe("closing a set from the editor", () => {
 
     const d = deps();
     expect(await closeScope(d, "pr/999")).toBe(1);
+  });
+});
+
+describe("deleting a set from the editor", () => {
+  it("deletes every note in the set, open or finished", async () => {
+    const done = await store.add(draft({ scope: "pr/142", order: 1 }));
+    await store.add(draft({ scope: "pr/142", order: 2 }));
+    await store.resolve(done.id, "human");
+    const d = deps();
+
+    expect(await deleteScope(d, "pr/142")).toBe(2);
+    expect(store.query({ scope: "pr/142", includeResolved: true })).toHaveLength(0);
+  });
+
+  it("asks which set when the command came from the palette", async () => {
+    await store.add(draft({ scope: "pr/142", order: 1 }));
+    const d = deps();
+
+    await deleteScope(d);
+    expect(d.chooseScope).toHaveBeenCalled();
+  });
+
+  it("asks before deleting, because it cannot be undone", async () => {
+    await store.add(draft({ scope: "pr/142", order: 1 }));
+    const d = deps({ confirmDelete: vi.fn(async () => false) });
+
+    expect(await deleteScope(d, "pr/142")).toBe(0);
+    expect(store.query({ scope: "pr/142" })).toHaveLength(1);
+  });
+
+  it("says how many notes are at stake when it asks, counting finished ones too", async () => {
+    const done = await store.add(draft({ scope: "pr/142", order: 1 }));
+    await store.add(draft({ scope: "pr/142", order: 2 }));
+    await store.resolve(done.id, "human");
+    const d = deps();
+
+    await deleteScope(d, "pr/142");
+    expect(d.confirmDelete).toHaveBeenCalledWith(expect.stringMatching(/2/));
+  });
+
+  it("says there are no sets rather than opening an empty picker", async () => {
+    await store.add(draft());
+    const d = deps();
+
+    expect(await deleteScope(d)).toBe(0);
+    expect(d.chooseScope).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith("info", expect.stringMatching(/no (named )?sets/i));
+  });
+
+  it("writes nothing when the user backs out of the picker", async () => {
+    await store.add(draft({ scope: "pr/142", order: 1 }));
+    const d = deps({ chooseScope: vi.fn(async () => undefined) });
+
+    expect(await deleteScope(d)).toBe(0);
+    expect(store.query({ scope: "pr/142" })).toHaveLength(1);
   });
 });
 

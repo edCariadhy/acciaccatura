@@ -8,7 +8,7 @@ import { captureAnnotation } from "./capture.js";
 import { clearFinishedNotes, markNoteDone, reopenNote, showNoteAges } from "./lifecycle.js";
 import type { LifecycleDeps } from "./lifecycle.js";
 
-import { addNoteToScope, checkScope, closeScope } from "./scopes.js";
+import { addNoteToScope, checkScope, closeScope, deleteScope } from "./scopes.js";
 
 import { watchStore } from "./watch.js";
 import type { ScopeDeps } from "./scopes.js";
@@ -279,6 +279,8 @@ export function activate(context: vscode.ExtensionContext): void {
               { modal: true },
               "Close set",
             )) === "Close set",
+          confirmDelete: async (question) =>
+            (await vscode.window.showWarningMessage(question, { modal: true }, "Delete set")) === "Delete set",
           notify: (level, message) =>
             level === "info"
               ? void vscode.window.showInformationMessage(`Acciaccatura: ${message}`)
@@ -310,9 +312,16 @@ export function activate(context: vscode.ExtensionContext): void {
     await redraw();
   });
 
+  const deleteSet = vscode.commands.registerCommand("acciaccatura.deleteScope", async (item?: ScopeTreeItem) => {
+    const deps = scopeDeps();
+    if (!deps) return;
+    await deleteScope(deps, item?.scope);
+    await redraw();
+  });
+
   context.subscriptions.push(
     annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
-    noteAges, closeSet, checkSet, addToSet,
+    noteAges, closeSet, checkSet, addToSet, deleteSet,
   );
 }
 
