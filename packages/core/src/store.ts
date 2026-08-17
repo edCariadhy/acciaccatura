@@ -585,12 +585,10 @@ export class AnnotationStore {
     try {
       await writeFile(temp, text, "utf8");
       await rename(temp, file);
-      // This instance is now the last writer, so what it just wrote is what it
-      // has seen. Without this the next file in the same batch would report a
-      // conflict against us, and the next write would think the file still
-      // held what it held before.
-      this.#seen.set(file, await markOf(file));
-      this.#digest.set(file, digestOf(text));
+      // Nothing to record here. Both the mark and the digest are refreshed by
+      // the `#readFromDisk` that opens every attempt in `#mutate`, and the
+      // conflict check runs once before any file is written rather than
+      // between them — so a value written back here could never be read.
     } catch (err) {
       await rm(temp, { force: true });
       throw err;
