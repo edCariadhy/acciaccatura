@@ -26,6 +26,59 @@ reads the same intent, regardless of editor.
 4. Each note is anchored to a line range with a captured snapshot, so when the code moves the
    agent is told the note may have **drifted** rather than being quietly misled.
 
+## Install
+
+Acciaccatura is not yet on the VS Code Marketplace. Build a `.vsix` from source and install it:
+
+```bash
+git clone https://github.com/edCariadhy/acciaccatura.git
+cd acciaccatura
+npm install
+npm run build                              # core → mcp-server + extension, in that order
+npm run package --workspace acciaccatura   # writes packages/extension/acciaccatura-<version>.vsix
+code --install-extension packages/extension/acciaccatura-*.vsix
+```
+
+Reload VS Code, open a workspace, and run **Acciaccatura: Annotate Selection** (Command Palette,
+or right-click in the editor) to confirm it's active. To also let agents read and write notes,
+register the MCP server — see [Use the MCP server](#use-the-mcp-server) below.
+
+Working on the extension itself instead of just using it? See [Develop](#develop) — press **F5**
+to run it from source without packaging anything.
+
+## Upgrade
+
+Rebuild and reinstall the same way. `code --install-extension` replaces an existing install
+automatically when the version differs — but this project doesn't bump
+`packages/extension/package.json`'s `version` on every change, so add `--force` or VS Code may
+decide the same version is already there and skip the reinstall:
+
+```bash
+git pull
+npm install
+npm run build
+npm run package --workspace acciaccatura
+code --install-extension packages/extension/acciaccatura-*.vsix --force
+```
+
+## Features
+
+- **Capture a note** on a selection, a single line, or just the caret — no need to select text
+  first. Reach it from the Command Palette or a right-click in the editor
+  (**Acciaccatura: Annotate Selection**).
+- **See notes without leaving the file**: a gutter icon and hover tooltip on every annotated
+  line. A note that no longer matches the code gets a loud warning, not a silent guess.
+- **Review from the sidebar**: notes are grouped by file, so you can read, delete, or promote an
+  agent's suggestion to authoritative in one place.
+- **Close the loop**: mark a note done once its work is finished, reopen it if that was wrong,
+  and clear out finished notes when they're safe to delete. **How Old Are My Notes?** shows how
+  long open notes have waited and finished notes have been sitting around.
+- **Group notes into a named set** (a *scope*) with its own order — a PR review or an onboarding
+  tour, not just notes scattered across files. Check a set's status, add a note to it, or close
+  it from the sidebar.
+- **Stay in sync**: the sidebar and gutter redraw when the shared store changes, including a
+  note an agent just wrote over MCP while you're sitting in a different file.
+
 ## Design principles
 
 These are strict rules, not just suggestions:
@@ -68,6 +121,24 @@ npm run test:e2e --workspace acciaccatura
 To try the extension interactively, open the repo in VS Code and press **F5** ("Run
 Extension"), then run **Acciaccatura: Annotate Selection** on a selection.
 
+## Release
+
+Bump the `version` in `packages/extension/package.json`, merge that, then tag the merge commit —
+[.github/workflows/publish.yml](.github/workflows/publish.yml) does the rest:
+
+```bash
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+The workflow refuses to run if the tag doesn't match the version it just bumped, so a stale or
+mistyped tag fails loudly instead of shipping the wrong build. It publishes to
+[Open VSX](https://open-vsx.org) — reaching Cursor, Antigravity, and anything else that reads
+that registry — using an `OVSX_PAT` repository secret (a personal access token from
+[open-vsx.org](https://open-vsx.org), under the `acciaccatura` namespace). Nothing publishes to
+the Microsoft VS Code Marketplace yet — that would be a second job in the same workflow, gated on
+its own `VSCE_PAT` secret, added when it's actually needed.
+
 ## Use the MCP server
 
 Build, then register the server with any MCP-capable agent. With Claude Code:
@@ -75,6 +146,31 @@ Build, then register the server with any MCP-capable agent. With Claude Code:
 ```bash
 claude mcp add acciaccatura --env ACCIACCATURA_WORKSPACE="$(pwd)" -- node "$(pwd)/packages/mcp-server/dist/index.js"
 ```
+
+Other clients — Cursor, Google Antigravity, and anything else that reads the common
+`mcpServers` config shape — take the same server as JSON instead of a CLI command:
+
+```json
+{
+  "mcpServers": {
+    "acciaccatura": {
+      "command": "node",
+      "args": ["/absolute/path/to/acciaccatura/packages/mcp-server/dist/index.js"],
+      "env": { "ACCIACCATURA_WORKSPACE": "/absolute/path/to/your/workspace" }
+    }
+  }
+}
+```
+
+Where that JSON goes depends on the client:
+
+| Client | File |
+| --- | --- |
+| Cursor | `.cursor/mcp.json` (this project only) or `~/.cursor/mcp.json` (every project) |
+| Google Antigravity | `.agents/mcp_config.json` (this project only) or `~/.gemini/config/mcp_config.json` (every project) |
+
+Both paths must be absolute — unlike the Claude Code command above, this JSON has no shell to
+expand `$(pwd)` for you.
 
 Tools exposed: `get_annotations` (bounded, ranked, drift-reported lookup), `annotate_code`
 (persist a note), `remove_annotation` (drop an obsolete note). See

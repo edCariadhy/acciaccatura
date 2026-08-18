@@ -1,0 +1,49 @@
+name: Publish
+
+# Tag-triggered, not push-triggered: a publish is a public, essentially
+# irreversible release, so it only runs when someone deliberately cuts a
+# version with `git tag v0.0.2 && git push origin v0.0.2` — never on an
+# ordinary push to master.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish to Open VSX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # The tag is the only thing a maintainer typed by hand here, so it is
+      # the thing most likely to be wrong — catch a stale or mistyped tag
+      # before it becomes a real, public, wrong-version release.
+      - name: Verify the tag matches the extension's package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./packages/extension/package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match packages/extension/package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      # Same gate CI runs on every PR — a publish is not the place to find
+      # out the build was already broken.
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Publish to Open VSX
+        run: npm run publish:ovsx --workspace acciaccatura
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}

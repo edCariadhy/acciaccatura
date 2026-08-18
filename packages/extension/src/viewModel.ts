@@ -34,6 +34,18 @@ export interface NoteView {
   reveal?: { startLine: number; endLine: number };
 }
 
+const MAX_LABEL_LENGTH = 60;
+
+/**
+ * The sidebar row is one fixed-width line — cut a long line down instead of
+ * letting it run past the panel or get clipped mid-word by VS Code. The full
+ * text is never lost: it is still what the tooltip shows.
+ */
+function truncateLabel(firstLine: string): string {
+  if (firstLine.length <= MAX_LABEL_LENGTH) return firstLine;
+  return `${firstLine.slice(0, MAX_LABEL_LENGTH)}…`;
+}
+
 /**
  * Decide how one note reads, given where its code sits now.
  *
@@ -63,7 +75,7 @@ export function noteView(annotation: Annotation, lines: NoteLines): NoteView {
   }
 
   return {
-    label: annotation.body.split("\n")[0] || "Annotation",
+    label: truncateLabel(annotation.body.split("\n")[0] ?? "") || "Annotation",
     description,
     tooltip,
     contextValue: finished ? "resolved" : annotation.trust === "suggested" ? "suggested" : "authoritative",

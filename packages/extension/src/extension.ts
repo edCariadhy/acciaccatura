@@ -15,6 +15,7 @@ import type { ScopeDeps } from "./scopes.js";
 
 import { DecorationManager, initDecorations } from "./decorations.js";
 import { AnnotationTreeProvider, AnnotationTreeItem, ScopeTreeItem } from "./treeView.js";
+import { resolveCaptureLines } from "./lineRange.js";
 
 /**
  * Entry point for the VS Code extension.
@@ -323,27 +324,30 @@ export function deactivate(): void {
 /**
  * Map the editor's selection to a {@link CapturedSelection}: a
  * workspace-relative POSIX path, a 1-based inclusive line range, and the exact
- * text of those whole lines (matching how the server re-reads the region).
- * Returns `undefined` when the selection is empty.
+ * text of those whole lines (matching how the server re-reads the region). An
+ * empty selection (just a caret) falls back to the caret's own line, so "note
+ * about this line" needs no select-then-invoke step. Line-range logic itself
+ * lives in {@link resolveCaptureLines}, which is unit-tested without a
+ * `vscode` host.
  */
 function selectionFrom(
   editor: vscode.TextEditor,
   folder: vscode.WorkspaceFolder,
 ): CapturedSelection | undefined {
   const sel = editor.selection;
-  if (sel.isEmpty) return undefined;
-
-  // A selection ending at column 0 of a later line does not include that line.
-  const endLineIdx =
-    sel.end.character === 0 && sel.end.line > sel.start.line ? sel.end.line - 1 : sel.end.line;
+  const { startLine, endLineIdx } = resolveCaptureLines({
+    startLine: sel.start.line,
+    endLine: sel.end.line,
+    endChar: sel.end.character,
+  });
 
   const lastCol = editor.document.lineAt(endLineIdx).text.length;
-  const fullLines = new vscode.Range(sel.start.line, 0, endLineIdx, lastCol);
+  const fullLines = new vscode.Range(startLine, 0, endLineIdx, lastCol);
 
   const file = relative(folder.uri.fsPath, editor.document.uri.fsPath).split(sep).join("/");
   return {
     file,
-    startLine: sel.start.line + 1,
+    startLine: startLine + 1,
     endLine: endLineIdx + 1,
     snapshot: editor.document.getText(fullLines),
   };

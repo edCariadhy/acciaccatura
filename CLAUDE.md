@@ -122,6 +122,13 @@ this repo owns **implementation**. Expect to receive ticket-sized slices with ac
 tests that must go red first. Anchoring work in particular should land against
 adversarial test cases, not happy-path ones.
 
+This applies beyond tickets: for any change with real logic, write the test first and
+watch it fail before writing the fix, not after. Nothing enforces this — no hook, no CI
+gate — it is a heuristic every contributor (agent included) is expected to hold
+themselves to. When the code under change is `vscode`-coupled and has no fast path to
+red, pull the actual decision into a plain-data function first so it does. Full guidance:
+[docs/wiki/standards/engineering-principles.md](docs/wiki/standards/engineering-principles.md#write-the-test-first--a-heuristic-not-a-gate).
+
 ## Product invariants (govern every design and PR)
 
 These come from the project brief, not from code, and are the non-obvious constraints an
