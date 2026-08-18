@@ -273,6 +273,33 @@ export class AnnotationStore {
     });
   }
 
+  /**
+   * Delete every note in a named set, open or finished, and report how many
+   * went. Unlike {@link AnnotationStore.resolveScope}, this does not skip
+   * already-finished notes — there is nothing left to keep once the set
+   * itself is gone.
+   *
+   * This is the one-at-a-time-only verb made whole: {@link
+   * AnnotationStore.remove} already deletes a single note, and this is the
+   * same decision applied to every note a set holds, in one call, for the
+   * same reason {@link AnnotationStore.resolveScope} exists for closing —
+   * deleting a twenty-note set one round trip at a time is a cost that stops
+   * a person bothering at all. It stays editor-only, never an MCP tool:
+   * closing is reversible and an agent may do it; deleting loses someone's
+   * reasoning for good, so it stays a person's decision.
+   */
+  async removeScope(scope: string): Promise<number> {
+    return this.#mutate((annotations) => {
+      let removed = 0;
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        if (annotations[i]!.scope !== scope) continue;
+        annotations.splice(i, 1);
+        removed++;
+      }
+      return removed;
+    });
+  }
+
   /** Put a finished note back in play — the work was not done after all. */
   async reopen(id: string): Promise<Annotation | undefined> {
     return this.#mutate((annotations) => {
