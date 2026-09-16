@@ -372,6 +372,16 @@ export class AnnotationStore {
     });
   }
 
+
+  /** Delete all notes in the store. */
+  async removeAll(): Promise<number> {
+    return this.#mutate((annotations) => {
+      const removed = annotations.length;
+      annotations.splice(0, annotations.length);
+      return removed;
+    });
+  }
+
   get(id: string): Annotation | undefined {
     this.#ensureLoaded();
     return this.#data.annotations.find((a) => a.id === id);

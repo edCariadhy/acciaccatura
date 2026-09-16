@@ -214,3 +214,18 @@ describe("a move interrupted between its two writes — scope to loose", () => {
     expect(healed.all()).toHaveLength(1);
   });
 });
+
+  describe("removeAll", () => {
+    it("deletes all notes", async () => {
+      const store = open();
+      await store.load();
+      await store.add(draft({file: "test.ts"}));
+      await store.add(draft({file: "test2.ts"}));
+      
+      expect(store.all()).toHaveLength(2);
+      
+      const removed = await store.removeAll();
+      expect(removed).toBe(2);
+      expect(store.all()).toHaveLength(0);
+    });
+  });
