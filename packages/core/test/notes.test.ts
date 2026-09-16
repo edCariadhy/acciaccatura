@@ -218,6 +218,7 @@ describe("a move interrupted between its two writes — scope to loose", () => {
   describe("removeAll", () => {
     it("deletes all notes", async () => {
       const store = open();
+      await store.load();
       await store.add(draft({file: "test.ts"}));
       await store.add(draft({file: "test2.ts"}));
       
