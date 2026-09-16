@@ -43,6 +43,15 @@ export interface Anchor {
   snapshotHash: string;
 }
 
+export interface Reply {
+  id: string;
+  body: string;
+  provenance: Provenance;
+  author?: string;
+  /** ISO-8601. */
+  createdAt: string;
+}
+
 export interface Annotation {
   id: string;
   body: string;
@@ -85,6 +94,10 @@ export interface Annotation {
    * alike and never what to read first.
    */
   order?: number;
+  /**
+   * Threaded replies to this annotation.
+   */
+  replies?: Reply[];
 }
 
 /** Input to {@link AnnotationStore.add}; the store derives id, hash, timestamps. */
@@ -99,3 +112,4 @@ export interface NewAnnotation {
   /** Optional place in that set's sequence. See {@link Annotation.order}. */
   order?: number;
 }
+

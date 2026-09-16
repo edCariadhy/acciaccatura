@@ -61,6 +61,7 @@ describe("MCP server integration", () => {
       "annotate_code",
       "get_annotations",
       "remove_annotation",
+      "reply_annotation",
       "resolve_annotation",
       "scope_status",
       "update_annotation",
@@ -246,15 +247,34 @@ describe("MCP server integration", () => {
       arguments: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: "export function add(a, b) {", body: "swap this for the shared helper" },
     });
     const id = /Saved annotation (\S+)/.exec(textOf(saved as never))![1]!;
-
+    
     const before = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
     expect(textOf(before as never)).toContain("shared helper");
 
     await client.callTool({ name: "resolve_annotation", arguments: { id } });
 
-    // The work is finished, so the note stops spending context on every turn.
-    const after = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts", limit: 10 } });
+    const after = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
     expect(textOf(after as never)).not.toContain("shared helper");
+  });
+
+  it("can reply to an annotation using reply_annotation", async () => {
+    const saved = await client.callTool({
+      name: "annotate_code",
+      arguments: { file: "src/math.ts", startLine: 1, endLine: 2, snapshot: "export function add(a, b) {\n  return a + b;", body: "question" },
+    });
+    const id = /Saved annotation (\S+)/.exec(textOf(saved as never))![1]!;
+
+    const replyRes = await client.callTool({
+      name: "reply_annotation",
+      arguments: { id, body: "answer" },
+    });
+    expect(textOf(replyRes as never)).toContain(`Added reply to annotation ${id}`);
+
+    const got = await client.callTool({ name: "get_annotations", arguments: { file: "src/math.ts" } });
+    const text = textOf(got as never);
+    expect(text).toContain("Replies:");
+    expect(text).toContain("answer");
+    expect(text).toContain("[agent]");
   });
 
   it("keeps a note the editor finished out of the agent's results", async () => {
@@ -786,6 +806,7 @@ describe("sets as resources", () => {
       "annotate_code",
       "get_annotations",
       "remove_annotation",
+      "reply_annotation",
       "resolve_annotation",
       "scope_status",
       "update_annotation",
@@ -1014,6 +1035,6 @@ describe("procedures as prompts", () => {
 
   it("does not spend a tool slot on any of this", async () => {
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(6);
+    expect(tools).toHaveLength(7);
   });
 });
