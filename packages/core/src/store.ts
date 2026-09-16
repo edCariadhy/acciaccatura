@@ -6,7 +6,7 @@ import { fingerprint, normalizeSnapshot } from "./anchor.js";
 import { withStoreLock } from "./lock.js";
 import { indexScopes } from "./scope.js";
 import type { ScopeIndexEntry } from "./scope.js";
-import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel } from "./types.js";
+import type { Anchor, Annotation, NewAnnotation, Provenance, TrustLevel, Reply } from "./types.js";
 
 /**
  * Default query bound. Context is the scarce resource: every annotation handed
@@ -214,6 +214,39 @@ export class AnnotationStore {
         if (changes.order === null) delete updated.order;
         else updated.order = changes.order;
       }
+
+      annotations[index] = updated;
+      return updated;
+    });
+  }
+
+  /**
+   * Add a threaded reply to an existing annotation.
+   *
+   * @param annotationId The id of the note to reply to.
+   * @param body The reply content.
+   * @param provenance Who is replying ("human" or "agent").
+   * @param author Optional author string.
+   */
+  async addReply(annotationId: string, body: string, provenance: Provenance, author?: string): Promise<Annotation | undefined> {
+    return this.#mutate((annotations) => {
+      const index = annotations.findIndex((a) => a.id === annotationId);
+      if (index === -1) return undefined;
+
+      const existing = annotations[index]!;
+      const reply: Reply = {
+        id: randomUUID(),
+        body,
+        provenance,
+        author,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated: Annotation = {
+        ...existing,
+        replies: [...(existing.replies ?? []), reply],
+        updatedAt: new Date().toISOString(),
+      };
 
       annotations[index] = updated;
       return updated;

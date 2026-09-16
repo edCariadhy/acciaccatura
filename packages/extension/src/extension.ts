@@ -147,6 +147,21 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  const replyAnno = vscode.commands.registerCommand("acciaccatura.replyAnnotation", async (item: AnnotationTreeItem) => {
+    if (!store || !item || !item.annotation) return;
+
+    const replyBody = await vscode.window.showInputBox({
+      title: "Reply to Annotation",
+      prompt: "Enter your reply:",
+      ignoreFocusOut: true,
+    });
+    
+    if (replyBody) {
+      await store.addReply(item.annotation.id, replyBody, "human");
+      treeProvider?.refresh();
+    }
+  });
+
   const reviewAnno = vscode.commands.registerCommand("acciaccatura.reviewAnnotation", async (item: AnnotationTreeItem) => {
     if (store && item && item.annotation) {
       // Promotion is an edit, not a rewrite: the note keeps its id and its
@@ -330,7 +345,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(
-    annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
+    annotate, refreshTree, deleteAnno, replyAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
     deleteAll,
     noteAges, closeSet, checkSet, addToSet, deleteSet,
   );

@@ -11,7 +11,7 @@ the behaviour is the defect rather than the fix.
 
 See standards/stable-contracts.md.
 
-## Tools (6)
+## Tools (7)
 
 ### annotate_code
 
@@ -153,6 +153,38 @@ input schema:
   },
   "required": [
     "id"
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+```
+
+### reply_annotation
+
+title: Reply to an annotation
+
+description:
+
+Call this to post a reply to an existing annotation. Use this when you want to answer a question asked in the annotation, or when you need to record a response to a warning/rule without modifying the original note itself.
+Get the id from get_annotations.
+
+input schema:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Annotation id from get_annotations"
+    },
+    "body": {
+      "type": "string",
+      "description": "The reply text"
+    }
+  },
+  "required": [
+    "id",
+    "body"
   ],
   "$schema": "http://json-schema.org/draft-07/schema#"
 }

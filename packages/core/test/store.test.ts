@@ -160,6 +160,30 @@ describe("AnnotationStore", () => {
     expect(store.all()).toHaveLength(0);
   });
 
+  it("can add a reply to an annotation", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    const saved = await store.add(draft());
+    
+    const updated = await store.addReply(saved.id, "my reply", "human", "Alice");
+    
+    expect(updated?.id).toBe(saved.id);
+    expect(updated?.replies).toHaveLength(1);
+    expect(updated?.replies?.[0]?.body).toBe("my reply");
+    expect(updated?.replies?.[0]?.provenance).toBe("human");
+    expect(updated?.replies?.[0]?.author).toBe("Alice");
+    expect(typeof updated?.replies?.[0]?.createdAt).toBe("string");
+    
+    const read = store.get(saved.id);
+    expect(read?.replies).toHaveLength(1);
+  });
+
+  it("returns undefined when adding a reply to a non-existent annotation", async () => {
+    const store = new AnnotationStore(storePath);
+    await store.load();
+    expect(await store.addReply("missing", "my reply", "human")).toBeUndefined();
+  });
+
   it("persists updates across reloads", async () => {
     const first = new AnnotationStore(storePath);
     await first.load();
