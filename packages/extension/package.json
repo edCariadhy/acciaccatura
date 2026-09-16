@@ -91,6 +91,11 @@
         "command": "acciaccatura.addNoteToScope",
         "title": "Add Note to Set",
         "category": "Acciaccatura"
+      },
+      {
+        "command": "acciaccatura.deleteScope",
+        "title": "Delete Set",
+        "category": "Acciaccatura"
       }
     ],
     "viewsContainers": {
@@ -181,6 +186,10 @@
         },
         {
           "command": "acciaccatura.closeScope",
+          "when": "view == acciaccatura.annotations && viewItem == scope"
+        },
+        {
+          "command": "acciaccatura.deleteScope",
           "when": "view == acciaccatura.annotations && viewItem == scope"
         },
         {

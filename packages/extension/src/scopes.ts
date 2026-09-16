@@ -23,6 +23,8 @@ export interface ScopeDeps {
   askScopeName: (existing: readonly string[]) => Promise<string | undefined>;
   /** Ask before finishing a whole set; `false` means stop. */
   confirmClose: (scope: string, count: number) => Promise<boolean>;
+  /** Ask before deleting a whole set for good; `false` means stop. */
+  confirmDelete: (question: string) => Promise<boolean>;
   /** Surface a message to the user. */
   notify: (level: "info" | "warn", message: string) => void;
 }
@@ -49,6 +51,33 @@ export async function closeScope(deps: ScopeDeps, scope?: string): Promise<numbe
   const finished = await deps.store.resolveScope(chosen, "human");
   deps.notify("info", `Closed ${chosen}: finished ${finished} ${finished === 1 ? "note" : "notes"}.`);
   return finished;
+}
+
+/**
+ * Delete every note in one set, open or finished, for good. The only bulk
+ * delete this extension offers other than "clear finished notes" — before
+ * this, deleting a set meant deleting every note in it one at a time.
+ *
+ * Deleting stays a person's decision, same as a single note: there is no MCP
+ * tool for it, only `acciaccatura.deleteScope` in the editor. Unlike closing,
+ * it counts finished notes too — there is nothing left to keep once the set
+ * itself is gone, and it cannot be undone, so we always ask.
+ */
+export async function deleteScope(deps: ScopeDeps, scope?: string): Promise<number> {
+  const chosen = await pickScope(deps, scope);
+  if (!chosen) return 0;
+
+  const count = deps.store.query({ scope: chosen, limit: Number.MAX_SAFE_INTEGER, includeResolved: true }).length;
+  if (count === 0) {
+    deps.notify("info", `Nothing in ${chosen}.`);
+    return 0;
+  }
+  const question = `Delete ${chosen}? ${count} ${count === 1 ? "note" : "notes"} — this cannot be undone.`;
+  if (!(await deps.confirmDelete(question))) return 0;
+
+  const removed = await deps.store.removeScope(chosen);
+  deps.notify("info", `Deleted ${chosen}: ${removed} ${removed === 1 ? "note" : "notes"}.`);
+  return removed;
 }
 
 /**
