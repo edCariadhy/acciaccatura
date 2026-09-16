@@ -26,7 +26,7 @@
     "test:mutation": "stryker run"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "vitest": "^3.2.7"
   }
 }
