@@ -23,3 +23,4 @@ reports/
 # .gitignore, so in a user's repository .acciaccatura/ is committed unless they
 # choose otherwise. See docs/wiki/standards/storage-and-lifecycle.md.
 .acciaccatura/
+.vscode-test-web/
