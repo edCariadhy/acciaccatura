@@ -12,11 +12,15 @@ suite("Acciaccatura extension (e2e)", () => {
     assert.strictEqual(ext.isActive, true, "extension should activate");
   });
 
-  test("registers the annotate command", async () => {
+  test("registers the commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(
       commands.includes("acciaccatura.annotateSelection"),
       "acciaccatura.annotateSelection should be registered",
+    );
+    assert.ok(
+      commands.includes("acciaccatura.replyAnnotation"),
+      "acciaccatura.replyAnnotation should be registered",
     );
   });
 

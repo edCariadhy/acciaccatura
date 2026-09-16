@@ -340,6 +340,30 @@ export function createServer(store: AnnotationStore, workspaceRoot: string): Mcp
   );
 
   server.registerTool(
+    "reply_annotation",
+    {
+      title: "Reply to an annotation",
+      description: dedent`
+        Call this to post a reply to an existing annotation. Use this when you want to answer a question asked in the annotation, or when you need to record a response to a warning/rule without modifying the original note itself.
+        Get the id from get_annotations.
+      `,
+      inputSchema: {
+        id: z.string().describe("Annotation id from get_annotations"),
+        body: z.string().describe("The reply text"),
+      },
+    },
+    async ({ id, body }) => {
+      const replied = await store.addReply(id, body, "agent");
+      if (!replied) {
+        return { content: [{ type: "text" as const, text: `No annotation with id ${id}` }] };
+      }
+      return {
+        content: [{ type: "text" as const, text: `Added reply to annotation ${id}` }],
+      };
+    },
+  );
+
+  server.registerTool(
     "scope_status",
     {
       title: "Check a set of notes",
@@ -562,10 +586,14 @@ function renderScopeDocument(entry: ScopeIndexEntry, notes: readonly Annotation[
 
   const steps = notes.map((a, i) => {
     const place = a.order === undefined ? `${i + 1}.` : `${a.order}.`;
-    return [
+    let block = [
       `${place} ${a.anchor.file} (written at ${a.anchor.startLine}-${a.anchor.endLine}) [${a.provenance}/${a.trust}]`,
       a.body,
     ].join("\n");
+    if (a.replies && a.replies.length > 0) {
+      block += "\n\nReplies:\n" + a.replies.map(r => `- [${r.provenance}] ${r.author ? `${r.author}: ` : ""}${r.body}`).join("\n");
+    }
+    return block;
   });
 
   if (entry.finished > 0) {
@@ -613,7 +641,11 @@ async function render(annotations: Annotation[], workspaceRoot: string): Promise
       const waiting =
         days === undefined || days < 1 ? "" : `, open ${days} day${days === 1 ? "" : "s"}`;
       const head = `#${a.id} [${a.provenance}/${a.trust}]${set} ${where} (drift: ${drift}${waiting})`;
-      return `${head}\n${a.body}`;
+      let block = `${head}\n${a.body}`;
+      if (a.replies && a.replies.length > 0) {
+        block += "\n\nReplies:\n" + a.replies.map(r => `- [${r.provenance}] ${r.author ? `${r.author}: ` : ""}${r.body}`).join("\n");
+      }
+      return block;
     }),
   );
   return blocks.join("\n\n");
