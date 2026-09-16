@@ -90,7 +90,14 @@
       {
         "command": "acciaccatura.deleteScope",
         "title": "Delete Set",
-        "category": "Acciaccatura"
+        "category": "Acciaccatura",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "acciaccatura.deleteAllAnnotations",
+        "title": "Delete All Notes",
+        "category": "Acciaccatura",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -146,6 +153,11 @@
           "command": "acciaccatura.clearFinishedAnnotations",
           "when": "view == acciaccatura.annotations",
           "group": "navigation"
+        },
+        {
+          "command": "acciaccatura.deleteAllAnnotations",
+          "when": "view == acciaccatura.annotations",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -181,6 +193,11 @@
         {
           "command": "acciaccatura.addNoteToScope",
           "when": "view == acciaccatura.annotations && viewItem =~ /^(suggested|authoritative)$/"
+        },
+        {
+          "command": "acciaccatura.deleteScope",
+          "when": "view == acciaccatura.annotations && viewItem == scope",
+          "group": "inline"
         }
       ]
     }

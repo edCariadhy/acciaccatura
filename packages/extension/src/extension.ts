@@ -5,7 +5,8 @@ import { AnnotationStore } from "@acciaccatura/core";
 import type { CapturedSelection } from "@acciaccatura/core";
 
 import { captureAnnotation } from "./capture.js";
-import { clearFinishedNotes, markNoteDone, reopenNote, showNoteAges } from "./lifecycle.js";
+import { clearFinishedNotes,
+  deleteAllNotes, markNoteDone, reopenNote, showNoteAges } from "./lifecycle.js";
 import type { LifecycleDeps } from "./lifecycle.js";
 
 import { addNoteToScope, checkScope, closeScope, deleteScope } from "./scopes.js";
@@ -215,6 +216,14 @@ export function activate(context: vscode.ExtensionContext): void {
     await redraw();
   });
 
+  const deleteAll = vscode.commands.registerCommand("acciaccatura.deleteAllAnnotations", async () => {
+    const deps = lifecycleDeps();
+    if (!deps) return;
+    await deleteAllNotes(deps);
+    await redraw();
+  });
+
+
   // Reporting only: it writes nothing, so there is nothing to redraw.
   const noteAges = vscode.commands.registerCommand("acciaccatura.showNoteAges", async () => {
     const deps = lifecycleDeps();
@@ -322,6 +331,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     annotate, refreshTree, deleteAnno, reviewAnno, resolveAnno, reopenAnno, clearFinished,
+    deleteAll,
     noteAges, closeSet, checkSet, addToSet, deleteSet,
   );
 }

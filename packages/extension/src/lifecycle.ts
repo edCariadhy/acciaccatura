@@ -129,3 +129,25 @@ function summarize(a: Annotation): string {
   const firstLine = a.body.split("\n")[0] ?? "";
   return firstLine.length > 60 ? `${firstLine.slice(0, 57)}…` : firstLine;
 }
+
+
+/**
+ * Delete all notes in the workspace.
+ */
+export async function deleteAllNotes(deps: LifecycleDeps): Promise<number> {
+  await deps.store.reload();
+  const allNotes = deps.store.all();
+  if (allNotes.length === 0) {
+    deps.notify("info", "No notes to delete.");
+    return 0;
+  }
+
+  const confirm = await deps.confirmDelete(
+    `Are you sure you want to delete ALL ${allNotes.length} notes? This cannot be undone.`
+  );
+  if (!confirm) return 0;
+
+  const removed = await deps.store.removeAll();
+  deps.notify("info", `Deleted ${removed} notes.`);
+  return removed;
+}

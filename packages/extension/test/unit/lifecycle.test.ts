@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearFinishedNotes,
+  deleteAllNotes,
   markNoteDone,
   reopenNote,
   showNoteAges,
@@ -229,3 +230,38 @@ describe("showNoteAges", () => {
     expect(await showNoteAges(deps())).toMatch(/1 open/);
   });
 });
+
+describe("deleteAllNotes", () => {
+  it("asks for confirmation, then deletes all and returns count", async () => {
+    const d = deps();
+    await d.store.add(draft("note 1"));
+    await d.store.add(draft("note 2"));
+
+    const removed = await deleteAllNotes(d);
+    expect(removed).toBe(2);
+    expect(d.store.all()).toHaveLength(0);
+    expect(d.confirmDelete).toHaveBeenCalledWith(
+      expect.stringContaining("Are you sure you want to delete ALL 2 notes")
+    );
+    expect(d.notify).toHaveBeenCalledWith("info", "Deleted 2 notes.");
+  });
+
+  it("does nothing if there are no notes", async () => {
+    const d = deps();
+    const removed = await deleteAllNotes(d);
+    expect(removed).toBe(0);
+    expect(d.confirmDelete).not.toHaveBeenCalled();
+    expect(d.notify).toHaveBeenCalledWith("info", "No notes to delete.");
+  });
+
+  it("does nothing if the user declines", async () => {
+    const d = deps({ confirmDelete: vi.fn(async () => false) });
+    await d.store.add(draft("note 1"));
+
+    const removed = await deleteAllNotes(d);
+    expect(removed).toBe(0);
+    expect(d.store.all()).toHaveLength(1);
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+});
+
